@@ -1,0 +1,31 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v5
+      - name: The tag names the version of both packages
+        run: |
+          for package in packages/web packages/vite; do
+            version=$(node -p "require('./$package/package.json').version")
+            if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+              echo "$package is $version, the tag is $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm stage publish --workspaces

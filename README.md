@@ -18,8 +18,6 @@ written and approved before the code, and the code is changed until they pass.
 - **A protocol for the people and agents who write the cases.** `init` writes an
   `AGENTS.md` that holds an agent to the order: cases, approval, then code.
 
-specrig is not on npm yet; see [Before publication](#before-publication).
-
 ## Packages
 
 | package | what it is |
@@ -211,11 +209,12 @@ an edit the mode does not allow is a stop.
 - The generated `Makefile` expects the app one directory below the repository root
   that holds the contracts.
 
-## Before publication
+## From a checkout
 
-Until the packages are on npm, an app installs them from a checkout of this
-repository, built with `npm install && npm run build`, and unsaved, so that
-`package.json` stays installable without it:
+To try a change to specrig in an app before it is released, the app installs the
+packages from a checkout of this repository, built with
+`npm install && npm run build`, and unsaved, so that `package.json` stays
+installable without it:
 
 ```bash
 npm install --no-save --install-links ../specrig-js/packages/web ../specrig-js/packages/vite
@@ -236,6 +235,28 @@ make test
 
 builds both packages and runs their tests in Playwright's image, then the suite of
 the app in `packages/vite/test/app`, which reads its backend's address at build.
+
+### Releasing
+
+Both packages carry one version, and a tag `v<version>` releases them: the
+`publish` workflow checks that the tag names the version of both, runs the tests,
+and stages both packages through npm's trusted publishing, with no token. A
+maintainer then approves each with 2FA, on npmjs.com or from the CLI.
+
+```bash
+npm version 0.1.1 --workspaces --no-git-tag-version
+git commit -am "chore: release 0.1.1"
+git tag v0.1.1
+git push origin main v0.1.1
+```
+
+```bash
+npm stage list @specrig/web
+npm stage approve <stage-id>
+```
+
+A caret range below 1.0 stops at the minor version, so when the minor changes,
+`@specrig/vite`'s range for `@specrig/web` changes with it.
 
 ## License
 

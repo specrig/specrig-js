@@ -1,0 +1,48 @@
+{
+  "name": "@specrig/web",
+  "version": "0.1.0",
+  "description": "A Playwright harness for a web app developed specification first: backends stood in for by their contract, and records of what the app can request and what its cases make it send.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./reporter": {
+      "types": "./dist/reporter.d.ts",
+      "default": "./dist/reporter.js"
+    },
+    "./init": {
+      "types": "./dist/init.d.ts",
+      "default": "./dist/init.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50.0",
+    "playwright-bdd": ">=8.0.0",
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.12.2",
+    "playwright-bdd": "^9.2.1",
+    "typescript": "~6.0.2"
+  }
+}

@@ -1,0 +1,6 @@
+# Generated from the code by specrig; the suite fails when it falls behind.
+version: 1
+service: shop
+clients:
+  main.api:
+    - GET /items

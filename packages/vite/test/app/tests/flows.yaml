@@ -1,0 +1,17 @@
+# Generated from the component suite by specrig. The structure is rewritten by
+# a whole green run of specrig record; only the description fields are yours.
+service: shop
+inputs:
+  - message: ui the visitor opens the shop
+    branches:
+      - sends:
+          - http GET /items
+        cases:
+          - "shop.feature: The visitor goes to the help pages"
+          - "shop.feature: The visitor sees what the shop sells, under the shop's name"
+  - message: ui they click "Help"
+    branches:
+      - cases:
+          - "shop.feature: The visitor goes to the help pages"
+outputs:
+  - message: http GET /items

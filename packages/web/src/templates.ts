@@ -10,7 +10,6 @@ export type Plan = {
   pages: ({ name: string; origin: string } & Pointer)[]
   runtime?: string[]
   build: string[]
-  flows: boolean
   parentRules: boolean
 }
 
@@ -100,10 +99,10 @@ REPO := $(notdir $(abspath $(CURDIR)/..))
 test:
 \t$(RUN) '$(INSTALL) && npm test'
 
-record:
-\t$(RUN) '$(INSTALL) && npx specrig record'
+generate:
+\t$(RUN) '$(INSTALL) && npx specrig surface'
 
-.PHONY: test record
+.PHONY: test generate
 `
   if (!plan.local) {
     return `${head}
@@ -178,14 +177,6 @@ The repository's rules in \`../AGENTS.md\` hold here too — ownership, the
 notation for specifications, a neighbour's rules are not reproduced.
 `
     : ""
-  const flowsFiles = plan.flows ? ", `waffle.yaml`" : ""
-  const surface = plan.flows
-    ? `\`tests/surface.yaml\` is what the code can request, in the form \`waffle flows\`
-reads; \`waffle.yaml\` is what makes it find ${app}. When a request is added or
-removed, \`make record\` rewrites the file, and the project's flows are
-regenerated with it.`
-    : `\`tests/surface.yaml\` is what the code can request. When a request is added or
-removed, \`make record\` rewrites the file.`
 
   return `# AGENTS.md
 
@@ -260,10 +251,11 @@ enforces the table yet, so you hold it yourself.
 | platform | the platform's files, and production code for a seam |
 
 The platform's files are \`harness.config.ts\`, \`tests/internal/\`,
-\`playwright.config.ts\`, \`package.json\`, \`package-lock.json\`, \`Makefile\`${flowsFiles}
-and this file.
+\`playwright.config.ts\`, \`package.json\`, \`package-lock.json\`, \`Makefile\`,
+\`specrig.yaml\` where there is one, and this file.
 \`tests/surface.yaml\` and the structure of \`tests/flows.yaml\` are written by
-\`make record\`, in any mode, and never by hand.
+\`make generate\` and by every whole run of the suite, in any mode, and never by
+hand.
 \`CONTRIBUTING.md\` is edited in no mode.
 
 \`package.json\` and \`package-lock.json\` can be granted in redgreen mode, by the
@@ -415,20 +407,24 @@ What the diff of a specification task must not carry, checkable at a glance:
 \`make test\` runs the suite in Playwright's image, so no local Node is needed; it
 ${plan.serving}.
 ${npm}
-\`make record\` runs the same suite and rewrites the records below instead of
-comparing them.
 
-\`tests/internal/\` holds the checks that run before any case: the app boots,
-\`tests/surface.yaml\` matches the code, and \`harness.config.ts\` answers every
-setting the app reads, at runtime and at build.
+\`tests/internal/\` holds the checks that run before any case: the app boots, and
+\`harness.config.ts\` answers every setting the app reads, at runtime and at build.
 
-${surface}
+The two records below are specrig's format, which a project's flow map reads
+beside its backends' records. Each is rewritten by what has its source, and
+nothing compares it on the way: CI runs \`make generate\` and \`make test\`, then
+\`git diff --exit-code\`, so a record that fell behind is a diff.
+
+\`tests/surface.yaml\` is what the code can request; \`make generate\` rewrites it.
+What a record cannot learn from the code — the backend a client calls, when the
+project cannot tell — goes into \`specrig.yaml\` beside it.
 
 \`tests/flows.yaml\` is what the cases make the app send: every \`When\` step, as
 written, is an input, and what reached a backend after it — until the next \`When\`
-or \`Given\` — is what it sent. A whole green run compares the file and fails on a
-difference; \`make record\` rewrites it, and only when its whole run is green. Any
-run leaves what it traced in \`test-results/flows.yaml\`. Only the
-\`description\` fields are written by hand, and they survive a rewrite.
+or \`Given\` — is what it sent. Every whole run rewrites it, a failing one
+included; a run narrowed to some cases writes nothing. Only the \`description\`
+fields are written by hand: they survive a rewrite, and one whose step is gone
+moves to \`orphaned\`, comes back with its step, and fails the run meanwhile.
 `
 }

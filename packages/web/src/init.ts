@@ -12,26 +12,25 @@ export type Preset = {
 }
 
 export const usage = `specrig init --backend <name>[=<setting>] [options]
-specrig record
+specrig surface
 
-record runs the app's tests and rewrites tests/surface.yaml, and tests/flows.yaml
-when the whole run is green. init lays the harness out in the app:
+surface writes tests/surface.yaml from the app's code. init lays the harness out
+in the app:
 
   --backend <name>[=<setting>]  a backend the app's HTTP client calls, and the setting
                                 that points at it; repeatable
   --contract <name>=<path>      its OpenAPI document, from the app's directory
   --failure <name>=<schema>     the schema of a 5xx it may answer on any route
   --service <name>              the app's name in its records; package.json's by default
-  --flows                       write waffle.yaml, so the project's flow map finds the app
 
 A setting is a field of the app's runtime config or a variable its build reads.
 Every other one ending in Url or URL is a page the app sends its users to; the
 rest are constants the harness answers empty. No file that exists is written.`
 
-type Flags = { backend: Map<string, string | undefined>; contract: Map<string, string>; failure: Map<string, string>; service?: string; flows: boolean }
+type Flags = { backend: Map<string, string | undefined>; contract: Map<string, string>; failure: Map<string, string>; service?: string }
 
 function parse(args: string[]): Flags {
-  const flags: Flags = { backend: new Map(), contract: new Map(), failure: new Map(), flows: false }
+  const flags: Flags = { backend: new Map(), contract: new Map(), failure: new Map() }
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
     const value = () => {
@@ -62,9 +61,6 @@ function parse(args: string[]): Flags {
         break
       case "--service":
         flags.service = value()
-        break
-      case "--flows":
-        flags.flows = true
         break
       default:
         throw new Error(`unknown argument ${arg}\n\n${usage}`)
@@ -140,7 +136,6 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
       }),
     runtime: found.runtime?.filter(constant),
     build: found.build.filter(constant),
-    flows: flags.flows,
     parentRules: existsSync(path.join(dir, "..", "AGENTS.md")),
   }
 }
@@ -164,9 +159,6 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
     ["tests/steps/bdd.ts", bddTs],
     ["AGENTS.md", agents(p)],
   ]
-  if (p.flows) {
-    files.push(["waffle.yaml", "{}\n"])
-  }
   for (const [name, body] of files) {
     const file = path.join(dir, name)
     if (existsSync(file)) {

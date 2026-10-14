@@ -43,7 +43,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
-    "test": "playwright test && bddgen -c test/app/playwright.config.ts && playwright test -c test/app/playwright.config.ts"
+    "test": "playwright test && (cd test/app && node ../../dist/cli.js surface) && bddgen -c test/app/playwright.config.ts && playwright test -c test/app/playwright.config.ts"
   },
   "dependencies": {
     "typescript": "^6.0.2"

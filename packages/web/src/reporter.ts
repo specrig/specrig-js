@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { FullConfig, FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter"
 import { build, encode, read, reconcile, type Run } from "./flows.js"
-import { recording } from "./record.js"
 
 // A narrowed run saw part of the app, and its record would lose the rest.
 const narrowing = ["--grep", "-g", "--grep-invert", "--project", "--last-failed", "--only-changed", "--shard"]
@@ -23,18 +22,17 @@ export function narrowed(argv: string[]): boolean {
   return false
 }
 
+// A failing run is recorded too: what it saw is true of it, and the passing run after it records that.
 export default class FlowsReporter implements Reporter {
   private runs: Run[] = []
   private whole = true
   private root = process.cwd()
-  private outputDir = ""
 
   constructor(private readonly options: { service: string }) {}
 
   onBegin(config: FullConfig): void {
     this.whole = !narrowed(process.argv)
     this.root = config.configFile ? path.dirname(config.configFile) : config.rootDir
-    this.outputDir = config.projects[0]?.outputDir ?? path.join(this.root, "test-results")
   }
 
   onTestEnd(_test: TestCase, result: TestResult): void {
@@ -44,33 +42,19 @@ export default class FlowsReporter implements Reporter {
     }
   }
 
-  async onEnd(result: FullResult): Promise<{ status: FullResult["status"] } | void> {
+  async onEnd(): Promise<{ status: FullResult["status"] } | void> {
+    if (!this.whole) {
+      return
+    }
     const record = path.join(this.root, "tests", "flows.yaml")
     const merged = reconcile(read(record), build(this.options.service, this.runs))
     const body = encode(merged)
-    mkdirSync(this.outputDir, { recursive: true })
-    writeFileSync(path.join(this.outputDir, "flows.yaml"), body)
-
-    if (result.status !== "passed" || !this.whole) {
-      if (recording()) {
-        console.log("tests/flows.yaml is written by a whole green run only; this run left it as it was")
-      }
-      return
-    }
-    if (recording()) {
+    if (!existsSync(record) || readFileSync(record, "utf8") !== body) {
+      mkdirSync(path.dirname(record), { recursive: true })
       writeFileSync(record, body)
-      return
-    }
-    const current = existsSync(record) ? readFileSync(record, "utf8") : ""
-    if (current !== body) {
-      console.error(
-        `tests/flows.yaml does not match what the suite traced (see ${path.relative(this.root, path.join(this.outputDir, "flows.yaml"))}); ` +
-          "rewrite it with specrig record and review the diff",
-      )
-      return { status: "failed" }
     }
     if (merged.orphaned) {
-      console.error("tests/flows.yaml: some descriptions lost their anchor — see orphaned")
+      console.error("tests/flows.yaml: some descriptions lost their anchor — delete them or move them under the input or branch they belong to now")
       return { status: "failed" }
     }
   }

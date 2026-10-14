@@ -16,11 +16,13 @@ type Branch = { sends?: string[]; sent?: Record<string, string[]>; refused?: str
 type Input = { message: string; description?: string; fields?: string[]; branches: Branch[] }
 type Output = { message: string; fields?: string[] }
 type Orphan = { anchor: string; description: string }
-export type Doc = { service: string; inputs: Input[]; outputs?: Output[]; orphaned?: Orphan[] }
+export type Doc = { specrig: string; service: string; inputs: Input[]; outputs?: Output[]; orphaned?: Orphan[] }
+
+const format = "flows/1"
 
 const header =
-  "# Generated from the component suite by specrig. The structure is rewritten by\n" +
-  "# a whole green run of specrig record; only the description fields are yours.\n"
+  "# Generated from the component suite by specrig: every whole run rewrites the\n" +
+  "# structure; only the description fields are yours.\n"
 
 const byBytes = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -118,7 +120,7 @@ export function build(service: string, runs: Run[]): Doc {
     return { ...(sends ? { sends } : {}), sent: Object.fromEntries(sent.map(([m, f]) => [m, [...f].sort(byBytes)])), cases }
   }
 
-  const doc: Doc = { service, inputs: [] }
+  const doc: Doc = { specrig: format, service, inputs: [] }
   for (const message of [...inputs.keys()].sort(byBytes)) {
     const input = inputs.get(message)!
     input.branches.push(...[...branches.get(message)!.values()].map(withSent))
@@ -136,7 +138,8 @@ export function build(service: string, runs: Run[]): Doc {
   return doc
 }
 
-// Carries the prose of old onto fresh by anchor; what finds no anchor is orphaned.
+// Carries the prose of old onto fresh by anchor, the orphaned included: a failing
+// run loses an anchor the passing one brings back. What finds none is orphaned.
 export function reconcile(old: Doc | undefined, fresh: Doc): Doc {
   const prose = new Map<string, string>()
   for (const input of old?.inputs ?? []) {
@@ -147,6 +150,14 @@ export function reconcile(old: Doc | undefined, fresh: Doc): Doc {
       if (b.description) {
         prose.set(anchorOf(input, b), b.description)
       }
+    }
+  }
+  const kept: Orphan[] = []
+  for (const orphan of old?.orphaned ?? []) {
+    if (prose.has(orphan.anchor)) {
+      kept.push(orphan)
+    } else {
+      prose.set(orphan.anchor, orphan.description)
     }
   }
   const used = new Set<string>()
@@ -165,7 +176,7 @@ export function reconcile(old: Doc | undefined, fresh: Doc): Doc {
     return { message: input.message, ...(description ? { description } : {}), fields: input.fields, branches }
   })
   const orphaned = [
-    ...(old?.orphaned ?? []),
+    ...kept,
     ...[...prose.keys()].filter((a) => !used.has(a)).sort(byBytes).map((anchor) => ({ anchor, description: prose.get(anchor)! })),
   ]
   return { ...fresh, inputs, ...(orphaned.length > 0 ? { orphaned } : {}) }

@@ -12,9 +12,10 @@ written and approved before the code, and the code is changed until they pass.
   address at runtime (`/config.js`) or at build (`import.meta.env.VITE_*`), the
   harness points it at the stand-in, and a check fails when the app reads a setting
   the config does not answer.
-- **Two records, kept by the suite.** `tests/surface.yaml` is what the code can
+- **Two records in specrig's format.** `tests/surface.yaml` is what the code can
   request, read from the code. `tests/flows.yaml` is what the cases make the app
-  send, step by step. A run fails when either falls behind.
+  send, step by step. A project's flow map reads them beside its backends'
+  records — `waffle flows` does.
 - **A protocol for the people and agents who write the cases.** `init` writes an
   `AGENTS.md` that holds an agent to the order: cases, approval, then code.
 
@@ -46,7 +47,6 @@ sends its users to; the rest become constants the harness answers empty.
 | `--contract <name>=<path>` | its OpenAPI document, from the app's directory |
 | `--failure <name>=<schema>` | the schema of a 5xx it may answer on any route |
 | `--service <name>` | the app's name in its records; `package.json`'s by default |
-| `--flows` | write `waffle.yaml`, the marker by which `waffle flows` finds the app |
 
 `init` writes no file that exists. It writes:
 
@@ -66,12 +66,16 @@ and adds `@playwright/test`, `playwright-bdd` and the two specrig packages to
 Then:
 
 ```bash
-make record
+make generate
 ```
 
-runs the suite once and writes `tests/surface.yaml` and `tests/flows.yaml`. From
-then on `make test` runs the suite in Playwright's image, so no local Node is
-needed. With Node installed, `npm test` and `npx specrig record` do the same.
+```bash
+make test
+```
+
+The first writes `tests/surface.yaml` from the code; the second runs the suite in
+Playwright's image, so no local Node is needed, and writes `tests/flows.yaml`. With
+Node installed, `npx specrig surface` and `npm test` do the same.
 
 ## Writing a case
 
@@ -177,21 +181,36 @@ environment, which Vite prefers to `.env`. The check reads every
 
 ## The records
 
+Both are specrig's format and say so first — `specrig: surface/1`,
+`specrig: flows/1` — so that a project's flow map, such as `waffle flows`, finds
+the app by them and reads them beside its backends' records. Each is rewritten by
+what has its source, and nothing compares it on the way: CI runs `make generate`
+and `make test`, then `git diff --exit-code`, so a record that fell behind is a
+diff.
+
 **`tests/surface.yaml`** lists the requests the code can send, by the client that
-sends them. It is read from the code through the TypeScript compiler, for a
-TypeScript app or a JavaScript one with a `jsconfig.json`: every call to the
-client's `get`, `post`, `put`, `patch` or `delete`, its path followed through
-constants, templates and the callers of the function that builds it. A segment
-that varies is written `{}`.
+sends them; `specrig surface` (`make generate`) writes it. It is read from the
+code through the TypeScript compiler, for a TypeScript app or a JavaScript one
+with a `jsconfig.json`: every call to the client's `get`, `post`, `put`, `patch`
+or `delete`, its path followed through constants, templates and the callers of
+the function that builds it. A segment that varies is written `{}`. What a record
+cannot learn from the code — the backend a client calls, when the project cannot
+tell — goes into `specrig.yaml` beside it:
+
+```yaml
+flows:
+  clients:
+    lib/http-client.httpClient: apostle
+```
 
 **`tests/flows.yaml`** lists what the cases make the app send. Every `When` step,
 as written, is an input, and what reached a backend after it — until the next
 `When` or `Given` — is what it sent, named by the route of the backend's contract
-that takes it, or as sent for a backend with no contract. Only the `description`
-fields are written by hand, and they survive a rewrite.
-
-`make test` compares both and fails on a difference. `make record` rewrites them:
-`tests/surface.yaml` on any run, `tests/flows.yaml` only when the whole run is green.
+that takes it, or as sent for a backend with no contract. Every whole run rewrites
+it, a failing one included; a run narrowed to some cases writes nothing. Only the
+`description` fields are written by hand: they survive a rewrite, and one whose
+step is gone moves to `orphaned`, comes back with its step, and fails the run
+meanwhile.
 
 ## The protocol
 

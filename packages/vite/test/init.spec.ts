@@ -72,14 +72,13 @@ test("init points a backend at a runtime setting", () => {
   }
   expect(readFileSync(path.join(dir, "tests/internal/checks.spec.ts"), "utf8")).toContain('from "@specrig/vite/playwright"')
   expect(lstatSync(path.join(dir, "CLAUDE.md")).isSymbolicLink()).toBe(true)
-  expect(existsSync(path.join(dir, "waffle.yaml"))).toBe(false)
 
   const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"))
   expect(pkg.scripts).toEqual({ build: "vite build", test: "bddgen && playwright test" })
   expect(Object.keys(pkg.devDependencies)).toEqual(["@playwright/test", "playwright-bdd"])
   const makefile = readFileSync(path.join(dir, "Makefile"), "utf8")
   expect(makefile).toContain("npm install --no-save --install-links --legacy-peer-deps --no-audit --no-fund /specrig/packages/web /specrig/packages/vite")
-  expect(makefile).toContain("record:\n\t$(RUN) '$(INSTALL) && npx specrig record'")
+  expect(makefile).toContain("generate:\n\t$(RUN) '$(INSTALL) && npx specrig surface'")
   expect(readFileSync(path.join(dir, ".gitignore"), "utf8")).toBe("node_modules\ndist\n.features-gen\ntest-results\nplaywright-report\nblob-report\n")
 })
 
@@ -99,11 +98,10 @@ test("init keeps what is there", () => {
   const dir = runtimeApp()
   writeFileSync(path.join(dir, "AGENTS.md"), "ours\n")
 
-  const report = init(dir, ["--backend", "api=apiUrl", "--flows"], preset)
+  const report = init(dir, ["--backend", "api=apiUrl"], preset)
 
   expect(readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe("ours\n")
   expect(report).toContain("= AGENTS.md — kept")
-  expect(existsSync(path.join(dir, "waffle.yaml"))).toBe(true)
 })
 
 test("init refuses a backend setting the app does not read", () => {

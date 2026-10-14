@@ -1,21 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { expect, test } from "@playwright/test"
-import { type Config, coverage, resolve, runtimeValues } from "./config.js"
-import { recording } from "./record.js"
-import { encode, extract } from "./surface.js"
-
-export function surfaceTest(config: Config): void {
-  const file = resolve(config, "tests/surface.yaml")
-  test("tests/surface.yaml matches the code", () => {
-    const fresh = encode(config.service, extract(config))
-    if (recording()) {
-      writeFileSync(file, fresh)
-      return
-    }
-    const current = existsSync(file) ? readFileSync(file, "utf8") : ""
-    expect(current, "tests/surface.yaml is behind the code — rewrite it with specrig record").toBe(fresh)
-  })
-}
+import { type Config, coverage, runtimeValues } from "./config.js"
 
 // The settings the app reads are the ones its own server answers with.
 export function runtimeTest(config: Config): void {
@@ -39,6 +23,5 @@ export function runtimeTest(config: Config): void {
 
 // What every app's harness checks of itself before any case.
 export function checks(config: Config): void {
-  surfaceTest(config)
   runtimeTest(config)
 }

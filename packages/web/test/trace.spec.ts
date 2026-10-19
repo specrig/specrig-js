@@ -90,6 +90,47 @@ test("a timer that re-arms itself is waited for no longer than a second past the
   expect(await act(page, trace)).toBeLessThan(1500)
 })
 
+test("a request the page sends once it has rendered an answer is waited for", async ({ context, page }) => {
+  const { trace, sent } = await shop(
+    context,
+    page,
+    `fetch("/items").then((r) => r.json()).then(() => {
+      const begun = performance.now()
+      while (performance.now() - begun < 150) {}
+      fetch("/items?page=2")
+    })`,
+  )
+
+  await act(page, trace)
+
+  expect(sent).toEqual(["", "?page=2"])
+})
+
+test("a page under the test's clock settles at once", async ({ context, page }) => {
+  const { trace } = await shop(context, page, ``)
+  await page.clock.setFixedTime(new Date("2026-03-01T10:00:00"))
+
+  expect(await act(page, trace)).toBeLessThan(150)
+})
+
+test("a debounce under the test's clock is waited for", async ({ context, page }) => {
+  const { trace, sent } = await shop(context, page, `setTimeout(() => fetch("/items"), 300)`)
+  await page.clock.setFixedTime(new Date("2026-03-01T10:00:00"))
+
+  await act(page, trace)
+
+  expect(sent).toEqual([""])
+})
+
+test("a timer the test's paused clock holds is not waited for past when it was due", async ({ context, page }) => {
+  const { trace, sent } = await shop(context, page, `setTimeout(() => fetch("/items"), 300)`)
+  await page.clock.install({ time: new Date("2026-03-01T10:00:00") })
+  await page.clock.pauseAt(new Date("2026-03-01T10:00:01"))
+
+  expect(await act(page, trace)).toBeLessThan(800)
+  expect(sent).toEqual([])
+})
+
 test("a frame's new document ends the timers its old one armed", async ({ context, page }) => {
   const { trace, sent } = await shop(context, page, `setTimeout(() => fetch("/items"), 800); location.href = "/next"`)
 

@@ -5,12 +5,24 @@ Given("the shop sells {string} and {string}", async ({ edges }, first: string, s
   edges.api.reply("GET", "/items", 200, [{ name: first }, { name: second }])
 })
 
+Given("the shop is slow to answer", async ({ edges }) => {
+  edges.api.hold("GET", "/items")
+})
+
 When("the visitor opens the shop", async ({ page }) => {
   await page.goto("/")
 })
 
 When("they click {string}", async ({ page }, name: string) => {
   await page.getByRole("link", { name }).click()
+})
+
+When("the shop answers", async ({ edges }) => {
+  await edges.api.release("GET", "/items")
+})
+
+Then("they see the shop loading", async ({ page }) => {
+  await expect(page.getByRole("status")).toHaveText("Loading")
 })
 
 Then("they see {string} and {string} under {string}", async ({ page }, first: string, second: string, name: string) => {

@@ -22,6 +22,7 @@ export class Trace {
   private step = ""
   private context?: BrowserContext
   private pending = new Set<Request>()
+  private holding = new Set<Request>()
   private timers = new Map<Frame, Map<number, Armed>>()
   private until = Infinity
   private lastActivity = 0
@@ -47,6 +48,17 @@ export class Trace {
 
   finished(request: Request): void {
     this.pending.delete(request)
+    this.holding.delete(request)
+    this.lastActivity = Date.now()
+  }
+
+  // An answer a step holds back is not waited for: a later step lets it go.
+  held(request: Request): void {
+    this.holding.add(request)
+  }
+
+  released(request: Request): void {
+    this.holding.delete(request)
     this.lastActivity = Date.now()
   }
 
@@ -55,6 +67,7 @@ export class Trace {
     for (const request of this.pending) {
       if (request.frame() === frame) {
         this.pending.delete(request)
+        this.holding.delete(request)
       }
     }
     this.timers.delete(frame)
@@ -113,7 +126,8 @@ export class Trace {
   }
 
   private busy(since: number): boolean {
-    return this.pending.size > 0 || this.waiting() || Date.now() - Math.max(this.lastActivity, since) < quiet
+    const sending = [...this.pending].some((request) => !this.holding.has(request))
+    return sending || this.waiting() || Date.now() - Math.max(this.lastActivity, since) < quiet
   }
 
   private waiting(): boolean {

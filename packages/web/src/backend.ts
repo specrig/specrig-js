@@ -6,6 +6,8 @@ export type Query = Record<string, string | string[]>
 
 export type Reply = { query: Query; status: number; body?: unknown }
 
+type Hold = { query: Query; waiting: Route[] }
+
 export type Received = {
   method: string
   path: string
@@ -21,6 +23,7 @@ const cors = {
 
 export class Backend {
   private replies = new Map<string, Reply[]>()
+  private holds = new Map<string, Hold[]>()
   readonly received: Received[] = []
   readonly unanswered: string[] = []
   readonly violations: string[] = []
@@ -38,6 +41,41 @@ export class Backend {
     const key = `${method} ${path}`
     const others = (this.replies.get(key) ?? []).filter((r) => !sameQuery(r.query, query))
     this.replies.set(key, [...others, { query, status, body }])
+  }
+
+  // The requests the query takes wait until a step releases them: what the app shows while
+  // it waits, which of two answers it takes first, and that it gives up on one in time.
+  hold(method: string, path: string, query: Query = {}): void {
+    const key = `${method} ${path}`
+    const others = (this.holds.get(key) ?? []).filter((h) => !sameQuery(h.query, query))
+    this.holds.set(key, [...others, { query, waiting: [] }])
+  }
+
+  // What the hold kept waiting is answered with what the backend answers by now, and what comes later at once.
+  async release(method: string, path: string, query: Query = {}): Promise<void> {
+    const key = `${method} ${path}`
+    const holds = this.holds.get(key) ?? []
+    const hold = holds.find((h) => sameQuery(h.query, query))
+    if (!hold) {
+      throw new Error(`no step held ${key}${size(query) > 0 ? ` ${JSON.stringify(query)}` : ""}`)
+    }
+    this.holds.set(key, holds.filter((h) => h !== hold))
+    for (const route of hold.waiting) {
+      this.trace.released(route.request())
+      // The app may have given up on it: there is no one left to answer.
+      await this.fulfill(route).catch(() => {})
+    }
+  }
+
+  get unreleased(): string[] {
+    return [...this.holds.values()]
+      .flat()
+      .flatMap((h) => h.waiting)
+      .filter((route) => route.request().failure() === null)
+      .map((route) => {
+        const url = new URL(route.request().url())
+        return `${route.request().method()} ${url.pathname}${url.search}`
+      })
   }
 
   requests(method: string, path: string): Received[] {
@@ -58,6 +96,19 @@ export class Backend {
     this.trace.sent(this.contract?.name(request.method(), url.pathname) ?? key, body)
     this.violations.push(...(this.contract?.request(request.method(), url.pathname, body) ?? []))
 
+    const hold = pick(this.holds.get(key) ?? [], url.searchParams)
+    if (hold) {
+      hold.waiting.push(route)
+      this.trace.held(request)
+      return
+    }
+    await this.fulfill(route)
+  }
+
+  private async fulfill(route: Route): Promise<void> {
+    const request = route.request()
+    const url = new URL(request.url())
+    const key = `${request.method()} ${url.pathname}`
     const reply = pick(this.replies.get(key) ?? [], url.searchParams)
     if (!reply) {
       this.unanswered.push(`${key}${url.search}`)
@@ -73,9 +124,9 @@ export class Backend {
   }
 }
 
-// The reply naming the most of the query wins; of two naming as many, the later.
-export function pick(replies: Reply[], params: URLSearchParams): Reply | undefined {
-  let found: Reply | undefined
+// The reply, or hold, naming the most of the query wins; of two naming as many, the later.
+export function pick<T extends { query: Query }>(replies: T[], params: URLSearchParams): T | undefined {
+  let found: T | undefined
   for (const reply of replies) {
     if (matches(reply.query, params) && size(reply.query) >= size(found?.query ?? {})) {
       found = reply

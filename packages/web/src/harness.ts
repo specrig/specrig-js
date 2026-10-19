@@ -67,6 +67,7 @@ export function harness<const C extends Config>(config: C) {
         for (const b of backends) {
           const stand = stands.get(b.origin)!
           expect(stand.unanswered, `${b.name} calls no step declared`).toEqual([])
+          expect(stand.unreleased, `${b.name} answers a step held and none released`).toEqual([])
           expect(stand.violations, `what ${b.name}'s contract, ${b.contract}, does not allow`).toEqual([])
         }
       },

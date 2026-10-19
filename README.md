@@ -114,12 +114,35 @@ Then("they see {string} and {string}", async ({ page }, first: string, second: s
 |---|---|
 | `edges.<backend>.reply(method, path, status, body)` | what the backend answers |
 | `edges.<backend>.replyTo(method, path, query, status, body)` | the same, for a request whose query has these values; the reply naming the most of them wins |
+| `edges.<backend>.hold(method, path, query?)` | the requests the query takes wait until a step releases them; the hold naming the most of the query takes a request |
+| `edges.<backend>.release(method, path, query?)` | answers what that hold kept waiting with what the backend answers by then, and what comes after it at once |
 | `edges.<backend>.requests(method, path)` | what reached the backend, with query and body |
 | `edges.visited` | the pages the app sent the user to |
 
 A call no step answered gets a 501 and fails the test, named. After the test, every
 request and every answer is checked against the backend's contract: an unknown
 route, an undocumented status, or a body of the wrong shape fails it.
+
+A held request does not keep the harness waiting after a step, and one no step
+released fails the test, named, unless the app gave up on it. So a case can see what
+the app shows while it waits, give it two answers in the order the case chooses, or
+pass its timeout:
+
+```gherkin
+  Scenario: The visitor sees the shop loading until it answers
+    Given the shop sells "Tea" and "Coffee"
+    And the shop is slow to answer
+    When the visitor opens the shop
+    Then they see the shop loading
+    When the shop answers
+    Then they see "Tea" and "Coffee" under "Corner shop"
+```
+
+The second step holds — `edges.api.hold("GET", "/items")` — and the fifth releases —
+`await edges.api.release("GET", "/items")`. A timeout is a hold no step releases,
+passed on the test's clock: `page.clock.install()` before the request, then
+`page.clock.runFor(...)` past the timeout, which that clock counts when the app does
+with `setTimeout` or `AbortSignal.timeout`.
 
 ## `harness.config.ts`
 

@@ -206,11 +206,13 @@ flows:
 **`tests/flows.yaml`** lists what the cases make the app send. Every `When` step,
 as written, is an input, and what reached a backend after it — until the next
 `When` or `Given` — is what it sent, named by the route of the backend's contract
-that takes it, or as sent for a backend with no contract. Every whole run rewrites
-it, a failing one included; a run narrowed to some cases writes nothing. Only the
-`description` fields are written by hand: they survive a rewrite, and one whose
-step is gone moves to `orphaned`, comes back with its step, and fails the run
-meanwhile.
+that takes it, or as sent for a backend with no contract. Before the next step the
+harness waits for what the page has yet to send: the requests in flight, and every
+timer of up to a second the page arms within a second of the step — a debounce, a
+retry — then 50 ms with nothing more. Every whole run rewrites it, a failing one
+included; a run narrowed to some cases writes nothing. Only the `description`
+fields are written by hand: they survive a rewrite, and one whose step is gone
+moves to `orphaned`, comes back with its step, and fails the run meanwhile.
 
 ## The protocol
 

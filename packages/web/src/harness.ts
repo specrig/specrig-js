@@ -30,10 +30,7 @@ export function harness<const C extends Config>(config: C) {
         const outside: string[] = []
         const app = new URL(baseURL!).origin
 
-        context.on("request", (request) => trace.started(request))
-        context.on("requestfinished", (request) => trace.finished(request))
-        context.on("requestfailed", (request) => trace.finished(request))
-        context.on("page", (page) => page.on("framenavigated", (frame) => trace.navigated(frame)))
+        await trace.watch(context)
 
         await context.route("**/*", async (route) => {
           const url = new URL(route.request().url())

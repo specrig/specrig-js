@@ -1,7 +1,7 @@
 {
   "name": "@specrig/vite",
   "version": "0.3.0",
-  "description": "specrig for an app built with Vite: the plugin that serves its runtime settings, the checks that every setting it reads is answered, and init.",
+  "description": "specrig for an app built with Vite: the plugin that serves its runtime settings, the checks that every setting it reads is answered, init, and the rules of its Rule #11 modes.",
   "keywords": [
     "vite",
     "vite-plugin",

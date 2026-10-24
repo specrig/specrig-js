@@ -1,7 +1,21 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { agents, bddTs, bootSpec, checksSpec, harnessConfig, harnessTs, makefile, type Plan, playwrightConfig } from "./templates.js"
+import { agentsVerdict, referencesSpecrigMd } from "./agents.js"
+import { areas, readSpecrigYaml } from "./layout.js"
+import {
+  agentsStub,
+  bddTs,
+  bootSpec,
+  checksSpec,
+  harnessConfig,
+  harnessTs,
+  type Plan,
+  playwrightConfig,
+  reference,
+  specrigMd,
+  specrigYaml,
+} from "./templates.js"
 
 export type Preset = {
   packageDir: string
@@ -13,9 +27,16 @@ export type Preset = {
 
 export const usage = `specrig init --backend <name>[=<setting>] [options]
 specrig surface
+specrig agents
+specrig rules
 
-surface writes tests/surface.yaml from the app's code. init lays the harness out
-in the app:
+surface writes tests/surface.yaml from the app's code. agents writes specrig.md,
+Rule #11 for this app with the areas specrig.yaml declares, and fails while
+AGENTS.md does not bring it in. rules prints the Rule #11 modes, this app's layout
+and its areas as JSON, for the plugin that enforces the modes. The areas are the
+defaults and those specrig.yaml declares under agents.areas.
+
+init lays the harness out in the app:
 
   --backend <name>[=<setting>]  a backend the app's HTTP client calls, and the setting
                                 that points at it; repeatable
@@ -25,7 +46,9 @@ in the app:
 
 A setting is a field of the app's runtime config or a variable its build reads.
 Every other one ending in Url or URL is a page the app sends its users to; the
-rest are constants the harness answers empty. No file that exists is written.`
+rest are constants the harness answers empty. No file that exists is written but
+specrig.md, which is the tool's, and an AGENTS.md that lacks the line bringing
+specrig.md in, which gets it at its end.`
 
 type Flags = { backend: Map<string, string | undefined>; contract: Map<string, string>; failure: Map<string, string>; service?: string }
 
@@ -112,14 +135,10 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
   const isUrl = (setting: string) => /(Url|URL)$/.test(setting)
   const constant = (setting: string) => !claimed.includes(setting) && !isUrl(setting)
   const installed = path.join(dir, "node_modules", "@playwright", "test", "package.json")
-  const checkout = path.dirname(path.dirname(own))
   return {
     service,
     playwright: existsSync(installed) ? readJson(installed).version : readJson(path.join(own, "package.json")).devDependencies["@playwright/test"],
     adapter: readJson(path.join(preset.packageDir, "package.json")).name,
-    local: published
-      ? undefined
-      : { checkout: path.relative(dir, checkout), packages: [own, preset.packageDir].map((p) => path.relative(checkout, p)) },
     serving: preset.serving,
     backends: [...flags.backend].map(([name, setting]) => ({
       name,
@@ -136,8 +155,53 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
       }),
     runtime: found.runtime?.filter(constant),
     build: found.build.filter(constant),
-    parentRules: existsSync(path.join(dir, "..", "AGENTS.md")),
   }
+}
+
+type Written = "created" | "rewritten" | "current"
+
+export function writeSpecrigMd(dir: string, preset: Preset): Written {
+  const body = specrigMd(areas(readSpecrigYaml(dir)), preset.serving, readJson(path.join(own, "package.json")).version)
+  const file = path.join(dir, "specrig.md")
+  const before = existsSync(file) ? readFileSync(file, "utf8") : undefined
+  if (before === body) {
+    return "current"
+  }
+  writeFileSync(file, body)
+  return before === undefined ? "created" : "rewritten"
+}
+
+export function agents(dir: string, preset: Preset): string[] {
+  const file = path.join(dir, "AGENTS.md")
+  if (!existsSync(file)) {
+    throw new Error("there is no AGENTS.md here: `npx --no specrig init` writes one that brings specrig.md in")
+  }
+  const written = writeSpecrigMd(dir, preset)
+  const all = written === "current" ? "" : "\n\nspecrig.md is written all the same."
+  switch (agentsVerdict(readFileSync(file, "utf8"))) {
+    case "stale":
+      throw new Error(`AGENTS.md still carries Rule #11, which specrig.md holds now: keep the app's own sections in it and delete the rest${all}`)
+    case "unreferenced":
+      throw new Error(`AGENTS.md does not bring specrig.md in: add the line\n\n${reference()}\n\nwhere an agent reads it before the first edit${all}`)
+  }
+  return written === "current" ? [] : ["wrote specrig.md"]
+}
+
+function agentsMd(dir: string, service: string): string {
+  const file = path.join(dir, "AGENTS.md")
+  if (!existsSync(file)) {
+    writeFileSync(file, agentsStub(service, existsSync(path.join(dir, "..", "AGENTS.md"))))
+    return "+ AGENTS.md"
+  }
+  const text = readFileSync(file, "utf8")
+  const left =
+    agentsVerdict(text) === "stale" ? "; it still carries Rule #11, which specrig.md holds now: keep the app's own sections in it and delete the rest" : ""
+  if (referencesSpecrigMd(text)) {
+    return `= AGENTS.md — kept${left}`
+  }
+  const gap = text === "" ? "" : text.endsWith("\n") ? "\n" : "\n\n"
+  writeFileSync(file, `${text}${gap}${reference()}\n`)
+  return `~ AGENTS.md: the line that brings specrig.md in, at its end${left}`
 }
 
 export function init(dir: string, args: string[], preset: Preset): string[] {
@@ -146,23 +210,27 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
     throw new Error(`${dir} has no package.json`)
   }
   const packageJson = readJson(packageFile)
+  const config = readSpecrigYaml(dir)
   const p = plan(dir, parse(args), packageJson, preset)
   const report: string[] = []
 
   const files: [string, string][] = [
     ["harness.config.ts", harnessConfig(p)],
     ["playwright.config.ts", playwrightConfig(p)],
-    ["Makefile", makefile(p)],
+    ["specrig.yaml", specrigYaml],
     ["tests/internal/harness.ts", harnessTs],
     ["tests/internal/checks.spec.ts", checksSpec(p)],
     ["tests/internal/boot.spec.ts", bootSpec],
     ["tests/steps/bdd.ts", bddTs],
-    ["AGENTS.md", agents(p)],
   ]
   for (const [name, body] of files) {
     const file = path.join(dir, name)
     if (existsSync(file)) {
-      report.push(`= ${name} — kept`)
+      report.push(
+        name === "specrig.yaml" && !config?.guard
+          ? `= ${name} — kept, and it names no guard: add \`${specrigYaml.trim()}\` to it for a tool to enforce the modes`
+          : `= ${name} — kept`,
+      )
       continue
     }
     mkdirSync(path.dirname(file), { recursive: true })
@@ -170,6 +238,8 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
     report.push(`+ ${name}`)
   }
   mkdirSync(path.join(dir, "tests", "feature"), { recursive: true })
+  report.push(agentsMd(dir, p.service))
+  report.push({ created: "+ specrig.md", rewritten: "~ specrig.md", current: "= specrig.md — current" }[writeSpecrigMd(dir, preset)])
   if (!existsSync(path.join(dir, "CLAUDE.md"))) {
     symlinkSync("AGENTS.md", path.join(dir, "CLAUDE.md"))
     report.push("+ CLAUDE.md → AGENTS.md")
@@ -179,7 +249,7 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
     "@playwright/test": p.playwright,
     "playwright-bdd": "^9.2.1",
   }
-  if (!p.local) {
+  if (published) {
     wanted["@specrig/web"] = `^${readJson(path.join(own, "package.json")).version}`
     wanted[p.adapter] = `^${readJson(path.join(preset.packageDir, "package.json")).version}`
   }
@@ -198,6 +268,10 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
     packageJson.devDependencies = Object.fromEntries(Object.entries(dev).sort(([a], [b]) => (a < b ? -1 : 1)))
     writeFileSync(packageFile, `${JSON.stringify(packageJson, null, 2)}\n`)
     report.push(`~ package.json: ${[...added, ...(testScript ? ["the test script"] : [])].join(", ")}`)
+  }
+  if (!published) {
+    const checkout = [own, preset.packageDir].map((p) => path.relative(dir, p)).join(" ")
+    report.push(`  then, before every run: npm install --no-save --install-links ${checkout}`)
   }
 
   const ignoreFile = path.join(dir, ".gitignore")

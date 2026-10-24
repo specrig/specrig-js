@@ -209,7 +209,7 @@ export function encode(service: string, clients: Map<string, string[]>): string 
   ].join("\n")
 }
 
-// Silent when the record already says what the code does, as `waffle surface` is.
+// Silent when the record already says what the code does.
 export function writeSurface(config: Config): boolean {
   const file = resolve(config, "tests/surface.yaml")
   const body = encode(config.service, extract(config))

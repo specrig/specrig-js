@@ -16,14 +16,18 @@ written and approved before the code, and the code is changed until they pass.
   request, read from the code. `tests/flows.yaml` is what the cases make the app
   send, step by step. A project's flow map reads them beside its backends'
   records — `waffle flows` does.
-- **A protocol for the people and agents who write the cases.** `init` writes an
-  `AGENTS.md` that holds an agent to the order: cases, approval, then code.
+- **Rule #11 for the people and agents who write the cases.** `init` writes
+  `specrig.md`, which holds an agent to the order: cases, approval, then code, each
+  edit in a mode the human switched on, and one line in the app's `AGENTS.md`
+  brings it in. `specrig agents` rewrites it, and `specrig rules` gives the
+  specrig plugin for Claude Code the app's rules, so it refuses an edit the mode
+  does not allow before it happens.
 
 ## Packages
 
 | package | what it is |
 |---|---|
-| [`@specrig/web`](packages/web) | the core, independent of the build tool: the harness, the contract check, the records, the reporter, and the engine behind `init` |
+| [`@specrig/web`](packages/web) | the core, independent of the build tool: the harness, the contract check, the records, the reporter, the rules of the Rule #11 modes, and the engine behind `init` |
 | [`@specrig/vite`](packages/vite) | for an app built with Vite: the `runtimeConfig` plugin, the settings checks, the `webServer` helper, and the `specrig` command |
 
 ## Getting started
@@ -48,34 +52,45 @@ sends its users to; the rest become constants the harness answers empty.
 | `--failure <name>=<schema>` | the schema of a 5xx it may answer on any route |
 | `--service <name>` | the app's name in its records; `package.json`'s by default |
 
-`init` writes no file that exists. It writes:
+`init` writes no file that exists, save `specrig.md` and the line an `AGENTS.md`
+lacks. It writes:
 
 | file | who changes it |
 |---|---|
 | `harness.config.ts` | whoever owns the platform: a new origin, a new setting |
-| `playwright.config.ts`, `Makefile`, `tests/internal/` | nobody, as a rule |
+| `playwright.config.ts`, `tests/internal/` | nobody, as a rule |
+| `specrig.yaml`, naming the tool the plugin asks: `guard: [npx, --no, specrig]` | whoever owns the platform: an area, a client's backend |
 | `tests/internal/boot.spec.ts` | the answers an empty app needs to boot, if any |
 | `tests/steps/bdd.ts` | nobody: it is where steps import `Given`, `When`, `Then` from |
 | `tests/feature/` | the cases |
-| `AGENTS.md`, and `CLAUDE.md` linked to it | its "This app" section, once |
+| `AGENTS.md`, and `CLAUDE.md` linked to it; to an `AGENTS.md` there already, the line that brings `specrig.md` in | whoever owns the platform: what the app is for |
+| `specrig.md` | nobody: `specrig agents` rewrites it |
 
 and adds `@playwright/test`, `playwright-bdd` and the two specrig packages to
 `devDependencies`, a `test` script if there is none, and the test output to
-`.gitignore`.
+`.gitignore`. A `specrig.yaml` that is there already and names no guard is kept,
+and `init` says to add the line.
 
 Then:
 
 ```bash
-make generate
+npx --no specrig surface
 ```
 
 ```bash
-make test
+npx --no specrig agents
 ```
 
-The first writes `tests/surface.yaml` from the code; the second runs the suite in
-Playwright's image, so no local Node is needed, and writes `tests/flows.yaml`. With
-Node installed, `npx specrig surface` and `npm test` do the same.
+```bash
+npx --no bddgen && npx --no playwright test
+```
+
+The first writes `tests/surface.yaml` from the code, the second `specrig.md` from
+`specrig.yaml`, and the third runs the suite, with Playwright's browsers installed
+by `npx playwright install`, and writes `tests/flows.yaml`. How and where they run
+— a `Makefile`, the `package.json` scripts, CI — is the project's. The `agents`
+command fails while `AGENTS.md` does not bring `specrig.md` in, or still carries
+Rule #11 from before there was one.
 
 ## Writing a case
 
@@ -90,7 +105,7 @@ Feature: The shop
     Then they see "Tea" and "Coffee"
 ```
 
-`make test` without steps prints the snippets to start from. Steps receive the
+The suite without steps prints the snippets to start from. Steps receive the
 `edges` fixture:
 
 ```ts
@@ -207,12 +222,12 @@ environment, which Vite prefers to `.env`. The check reads every
 Both are specrig's format and say so first — `specrig: surface/1`,
 `specrig: flows/1` — so that a project's flow map, such as `waffle flows`, finds
 the app by them and reads them beside its backends' records. Each is rewritten by
-what has its source, and nothing compares it on the way: CI runs `make generate`
-and `make test`, then `git diff --exit-code`, so a record that fell behind is a
-diff.
+what has its source, and nothing compares it on the way: a project that rewrites
+them in CI and then runs `git diff --exit-code` sees a record that fell behind as
+a diff.
 
 **`tests/surface.yaml`** lists the requests the code can send, by the client that
-sends them; `specrig surface` (`make generate`) writes it. It is read from the
+sends them; `specrig surface` writes it. It is read from the
 code through the TypeScript compiler, for a TypeScript app or a JavaScript one
 with a `jsconfig.json`: every call to the client's `get`, `post`, `put`, `patch`
 or `delete`, its path followed through constants, templates and the callers of
@@ -238,21 +253,95 @@ included; a run narrowed to some cases writes nothing. Only the `description`
 fields are written by hand: they survive a rewrite, and one whose step is gone
 moves to `orphaned`, comes back with its step, and fails the run meanwhile.
 
-## The protocol
+## Modes and rules
 
-The `AGENTS.md` that `init` writes holds the people and agents who write the cases
+The `specrig.md` that `init` writes holds the people and agents who write the cases
 to three steps, with a stop after each: the cases, then approval by a human, then
 the code, changed until every case that was red for its own reason is green. Every
-edit is made in a mode only the human switches — spec, redgreen or platform — and
-an edit the mode does not allow is a stop.
+edit is made in a mode only the human switches — spec, redgreen or platform, and
+redgreen until one is switched — and an edit the mode does not allow is a stop. Auto mode, which the human
+switches on too and nothing offers, runs the whole cycle without a stop for a
+human who reviews it all at once; it takes the areas and grants of spec and
+redgreen, and keeps the platform's files closed.
+
+`specrig rules` prints, for the app it runs in, the modes, the classes its layout
+fills and its areas, as one line of JSON —
+[rules/1](https://github.com/specrig/protocol/blob/main/guard.md#rules1), what the
+plugin checks every edit against:
+
+```bash
+npx --no specrig rules
+```
+
+It switches nothing: which mode is on, and what was granted, is the plugin's to
+hold. A path takes the first class that names it:
+
+| class | paths | open in |
+|---|---|---|
+| the humans' | `CONTRIBUTING.md` | no mode |
+| generated | `specrig.md`, `tests/surface.yaml` | no mode |
+| platform | `harness.config.ts`, `tests/internal/`, `playwright.config.ts`, `specrig.yaml`, `AGENTS.md`, `CLAUDE.md` | platform |
+| cases | `tests/feature/**/*.feature` | spec, auto |
+| tests | the rest of `tests/` | redgreen, auto |
+| production | everything else | redgreen, platform, auto |
+
+An area is a named set of paths. One with its own modes takes its paths out of
+the class table; one without follows it, and its grant only adds:
+
+| area | paths | open in | granted in |
+|---|---|---|---|
+| deps | `package.json`, `package-lock.json` | platform | redgreen |
+| flows | `tests/flows.yaml` | spec, redgreen, platform | — |
+| steps | `tests/steps/` | as the table says | platform |
+
+`specrig.yaml` replaces a default by naming it, and adds its own — a monorepo's
+shared contracts, say. An area naming a mode the table does not have is an error
+that names the area.
+
+```yaml
+guard: [npx, --no, specrig]
+agents:
+  areas:
+    contracts:
+      paths: [../docs/api/]
+      modes: [spec, platform]
+```
+
+A path is checked where it is written and where it leads through a symlink, and
+refused if either is; each name is compared as its directory spells it, so on a
+case-insensitive filesystem `Specrig.yaml` is `specrig.yaml`.
+
+**The specrig plugin for Claude Code enforces the modes.** The human switches with
+`/specrig:<mode>` and grants with `/specrig:allow <area>`; the plugin reads the
+rules of the tool `specrig.yaml` names once a session, and refuses an edit the mode
+does not allow before it happens:
+
+```
+/plugin marketplace add specrig/specrig
+/plugin install specrig@specrig
+```
+
+Without it, the agent reads the same tables in `specrig.md` and holds the boundary
+itself.
+
+## The protocol
+
+What every specrig stack agrees on — the records, the rules, the modes and the
+text of `specrig.md` — is [specrig's protocol](https://github.com/specrig/protocol).
+`packages/web/protocol` holds a pinned copy of its data: `modes.yaml` and
+`agents/*.md`, which the published `@specrig/web` carries and `rules`, `init` and
+`specrig agents` read, and the fixtures, which the tests run. Every agents fixture
+goes through the check of `AGENTS.md`; a record fixture goes through the flows
+writer, unless it holds what a web app never sends its writer — inputs other than
+`When` steps, outputs other than HTTP, refusals — and the test says which. The
+guard fixtures are the plugin's to run. This repository implements `surface/1`,
+`flows/1`, `rules/1`, `modes/1` and `agents/1`.
 
 ## Limits
 
 - Vite is the only build tool with an adapter.
 - Requests are read from one client class; an app that calls `fetch` or a library
   directly has no `tests/surface.yaml` to speak of.
-- The generated `Makefile` expects the app one directory below the repository root
-  that holds the contracts.
 
 ## From a checkout
 
@@ -265,8 +354,8 @@ installable without it:
 npm install --no-save --install-links ../specrig-js/packages/web ../specrig-js/packages/vite
 ```
 
-`init` run from a checkout writes a `Makefile` that does this in Playwright's image,
-with the checkout mounted beside the app's repository:
+`init` run from a checkout adds neither package to `package.json`, and prints this
+command, with the checkout's paths, to run before every run:
 
 ```bash
 node ../specrig-js/packages/vite/dist/cli.js init --backend api=apiUrl
@@ -278,8 +367,17 @@ node ../specrig-js/packages/vite/dist/cli.js init --backend api=apiUrl
 make test
 ```
 
-builds both packages and runs their tests in Playwright's image, then the suite of
-the app in `packages/vite/test/app`, which reads its backend's address at build.
+builds both packages and runs their tests, then the suite of the app in
+`packages/vite/test/app`, which reads its backend's address at build; Playwright's
+browsers have to be installed. `make test-docker` does the same in Playwright's
+image.
+
+```bash
+make protocol
+```
+
+refreshes `packages/web/protocol` from a checkout of the protocol at
+`PROTOCOL`, `../protocol` by default.
 
 ### Releasing
 

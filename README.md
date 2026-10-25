@@ -14,8 +14,10 @@ written and approved before the code, and the code is changed until they pass.
   the config does not answer.
 - **Two records in specrig's format.** `tests/surface.yaml` is what the code can
   request, read from the code. `tests/flows.yaml` is what the cases make the app
-  send, step by step. A project's flow map reads them beside its backends'
-  records — specrig-go's `flows` does.
+  send, step by step. `specrig-flows` reads them beside its backends' records as
+  one system: one binary for every stack, from
+  [specrig-go's releases](https://github.com/specrig/specrig-go#a-projects-flows),
+  with no Go needed.
 - **Rule #11 for the people and agents who write the cases.** `init` writes
   `specrig.md`, which holds an agent to the order: cases, approval, then code, each
   edit in a mode the human switched on, and one line in the app's `AGENTS.md`
@@ -220,8 +222,8 @@ environment, which Vite prefers to `.env`. The check reads every
 ## The records
 
 Both are specrig's format and say so first — `specrig: surface/1`,
-`specrig: flows/1` — so that a project's flow map, such as specrig-go's `flows`, finds
-the app by them and reads them beside its backends' records. Each is rewritten by
+`specrig: flows/1` — so that `specrig-flows` finds the app by them and reads them
+beside its backends' records. Each is rewritten by
 what has its source, and nothing compares it on the way: a project that rewrites
 them in CI and then runs `git diff --exit-code` sees a record that fell behind as
 a diff.

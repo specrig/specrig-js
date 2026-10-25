@@ -152,10 +152,10 @@ export function specrigMd(areas: Area[], serving: string, version: string): stri
     areas: areaRows(areas),
     cases: "`.feature` files in `tests/feature/`",
     contracts: "",
-    describes: `**A case describes the user and the wire.** What the user sees and does, what
-reaches a backend, and where the page sends them. Not markup, class names, layout
-or component structure — a case that breaks when the page is restyled was
-written about the wrong thing.
+    describes: `**A case describes the user and what reaches a backend.** What the user sees
+and does, what a backend is told, and where the page sends them. Not markup,
+class names, layout or component structure — a case that breaks when the page is
+restyled was written about the wrong thing.
 
 **A backend answers what the scenario declared.** A number in a case comes from a
 fixture, never computed inside a step. A rule a backend or a service behind it

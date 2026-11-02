@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
+import { generateMessages } from "@cucumber/gherkin"
+import { IdGenerator, SourceMediaType } from "@cucumber/messages"
 import YAML from "yaml"
 
 export type Traced = {
@@ -11,6 +13,15 @@ export type Traced = {
 }
 
 export type Run = { feature: string; scenario: string; records: Traced[] }
+
+// The case at a line of a feature, named as gherkin names it: an outline's row by its title filled from the row.
+export function caseTitle(feature: string, line: number): string | undefined {
+  const parsed = generateMessages(readFileSync(feature, "utf8"), feature, SourceMediaType.TEXT_X_CUCUMBER_GHERKIN_PLAIN, {
+    includePickles: true,
+    newId: IdGenerator.incrementing(),
+  })
+  return parsed.find((e) => e.pickle?.location?.line === line)?.pickle?.name
+}
 
 type Branch = { sends?: string[]; sent?: Record<string, string[]>; refused?: string; description?: string; cases: string[] }
 type Input = { message: string; description?: string; fields?: string[]; branches: Branch[] }

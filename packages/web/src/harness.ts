@@ -4,6 +4,7 @@ import { createBdd, test as base } from "playwright-bdd"
 import { Backend } from "./backend.js"
 import { type Config, resolve, runtimeScript } from "./config.js"
 import { Contract } from "./contract.js"
+import { caseTitle } from "./flows.js"
 import { Trace } from "./trace.js"
 
 export type Edges<C extends Config> = { [K in keyof C["backends"]]: Backend } & { visited: URL[]; trace: Trace }
@@ -78,10 +79,10 @@ export function harness<const C extends Config>(config: C) {
   const { BeforeStep } = createBdd(test)
   BeforeStep(async ({ $bddContext, edges }) => {
     const { titlePath: titles, config: playwright } = $bddContext.testInfo
-    const last = titles[titles.length - 1]
+    const file = path.resolve(path.dirname(playwright.configFile!), $bddContext.featureUri)
     edges.trace.scenario ??= {
-      feature: path.relative(features, path.resolve(path.dirname(playwright.configFile!), $bddContext.featureUri)),
-      scenario: /^Example #\d+$/.test(last) ? titles[titles.length - 2] : last,
+      feature: path.relative(features, file),
+      scenario: caseTitle(file, $bddContext.bddTestData.pickleLine) ?? titles[titles.length - 1],
     }
     const type = $bddContext.bddTestData.steps[$bddContext.stepIndex]?.keywordType ?? ""
     if (type !== "Outcome") {

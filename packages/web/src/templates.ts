@@ -173,9 +173,10 @@ talks to, which setting points at it, and the contract it answers by.
 Steps import \`Given\`, \`When\`, \`Then\` from \`tests/steps/bdd.ts\` and receive the
 \`edges\` fixture, with an entry for each backend \`harness.config.ts\` names:
 
-- \`edges.<backend>.reply(method, path, status, body)\` — what the backend answers,
-  set in the step that names the situation;
-- \`edges.<backend>.replyTo(method, path, query, status, body)\` — the same, for a
+- \`edges.<backend>.reply(method, path, status, body, headers?)\` — what the backend
+  answers, set in the step that names the situation; a segment in braces,
+  \`/orders/{id}\`, takes any value, and the exact path wins;
+- \`edges.<backend>.replyTo(method, path, query, status, body, headers?)\` — the same, for a
   request whose query has these values: the reply naming the most of them wins,
   and \`reply\` is the one naming none;
 - \`edges.<backend>.requests(method, path)\` — what reached the backend, with query

@@ -4,7 +4,7 @@ import { Backend } from "../src/backend.js"
 import { Contract } from "../src/contract.js"
 import { Trace } from "../src/trace.js"
 
-type Answer = { status?: number; json?: unknown }
+type Answer = { status?: number; json?: unknown; headers?: Record<string, string> }
 
 async function ask(backend: Backend, method: string, url: string, body?: unknown): Promise<Answer> {
   let answer: Answer = {}
@@ -54,6 +54,35 @@ test("a reply declared again for the same query replaces the first", async () =>
   shop.replyTo("GET", "/prices", { code: "S2" }, 404, quote("second"))
 
   expect(await ask(shop, "GET", "https://shop.test/prices?code=S2")).toMatchObject({ status: 404, json: quote("second") })
+})
+
+test("a segment in braces answers any value, and the exact path wins", async () => {
+  const shop = new Backend(new Trace())
+  shop.reply("GET", "/orders/{id}", 200, quote("any"))
+  shop.reply("GET", "/orders/7", 200, quote("seven"))
+
+  expect((await ask(shop, "GET", "https://shop.test/orders/random")).json).toEqual(quote("any"))
+  expect((await ask(shop, "GET", "https://shop.test/orders/7")).json).toEqual(quote("seven"))
+  expect((await ask(shop, "GET", "https://shop.test/orders/7/lines")).status).toBe(501)
+})
+
+test("requests asked for by a segment in braces are all that the segment takes", async () => {
+  const shop = new Backend(new Trace())
+  shop.reply("GET", "/orders/{id}", 200, quote("any"))
+  await ask(shop, "GET", "https://shop.test/orders/1")
+  await ask(shop, "GET", "https://shop.test/orders/2")
+
+  expect(shop.requests("GET", "/orders/{id}").map((r) => r.path)).toEqual(["/orders/1", "/orders/2"])
+  expect(shop.requests("GET", "/orders/2").map((r) => r.path)).toEqual(["/orders/2"])
+})
+
+test("a reply's headers are answered beside the ones the stand always sends", async () => {
+  const shop = new Backend(new Trace())
+  shop.reply("GET", "/export", 200, "a;b", { "content-disposition": 'attachment; filename="export.csv"' })
+
+  const { headers } = await ask(shop, "GET", "https://shop.test/export")
+
+  expect(headers).toMatchObject({ "content-disposition": 'attachment; filename="export.csv"', "access-control-allow-origin": "*" })
 })
 
 test("a call no reply answers is recorded and refused", async () => {

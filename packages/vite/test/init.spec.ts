@@ -217,7 +217,7 @@ test("the specrig.md init writes has every slot filled, and the mode and area ta
 `)
   expect(specrig).toContain("**An edit the mode does not allow is refused, and a refusal is a stop.**")
   expect(specrig).not.toContain("specrig guard")
-  expect(specrig).toContain("edges.<backend>.replyTo(method, path, query, status, body)")
+  expect(specrig).toContain("edges.<backend>.replyTo(method, path, query, status, body, headers?)")
 })
 
 test("init refuses a backend setting the app does not read", () => {

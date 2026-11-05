@@ -4,7 +4,9 @@ import type { Trace } from "./trace.js"
 
 export type Query = Record<string, string | string[]>
 
-export type Reply = { query: Query; status: number; body?: unknown }
+export type Headers = Record<string, string>
+
+export type Reply = { query: Query; status: number; body?: unknown; headers?: Headers }
 
 type Hold = { query: Query; waiting: Route[] }
 
@@ -33,14 +35,24 @@ export class Backend {
     private readonly contract?: Contract,
   ) {}
 
-  reply(method: string, path: string, status: number, body?: unknown): void {
-    this.replyTo(method, path, {}, status, body)
+  reply(method: string, path: string, status: number, body?: unknown, headers?: Headers): void {
+    this.replyTo(method, path, {}, status, body, headers)
   }
 
-  replyTo(method: string, path: string, query: Query, status: number, body?: unknown): void {
+  replyTo(method: string, path: string, query: Query, status: number, body?: unknown, headers?: Headers): void {
     const key = `${method} ${path}`
     const others = (this.replies.get(key) ?? []).filter((r) => !sameQuery(r.query, query))
-    this.replies.set(key, [...others, { query, status, body }])
+    this.replies.set(key, [...others, { query, status, body, headers }])
+  }
+
+  private repliesTo(method: string, path: string): Reply[] {
+    const exact = this.replies.get(`${method} ${path}`)
+    if (exact) {
+      return exact
+    }
+    const prefix = `${method} `
+    const template = [...this.replies.keys()].find((key) => key.startsWith(prefix) && takes(key.slice(prefix.length), path))
+    return template ? this.replies.get(template)! : []
   }
 
   // The requests the query takes wait until a step releases them: what the app shows while
@@ -79,7 +91,7 @@ export class Backend {
   }
 
   requests(method: string, path: string): Received[] {
-    return this.received.filter((r) => r.method === method && r.path === path)
+    return this.received.filter((r) => r.method === method && takes(path, r.path))
   }
 
   async answer(route: Route): Promise<void> {
@@ -109,19 +121,26 @@ export class Backend {
     const request = route.request()
     const url = new URL(request.url())
     const key = `${request.method()} ${url.pathname}`
-    const reply = pick(this.replies.get(key) ?? [], url.searchParams)
+    const reply = pick(this.repliesTo(request.method(), url.pathname), url.searchParams)
     if (!reply) {
       this.unanswered.push(`${key}${url.search}`)
       await route.fulfill({ status: 501, headers: cors, json: { code: "unanswered", message: key } })
       return
     }
     this.violations.push(...(this.contract?.response(request.method(), url.pathname, reply.status, reply.body ?? {}) ?? []))
+    const headers = { ...cors, ...reply.headers }
     if (reply.status === 204) {
-      await route.fulfill({ status: 204, headers: cors })
+      await route.fulfill({ status: 204, headers })
       return
     }
-    await route.fulfill({ status: reply.status, headers: cors, json: reply.body ?? {} })
+    await route.fulfill({ status: reply.status, headers, json: reply.body ?? {} })
   }
+}
+
+function takes(template: string, path: string): boolean {
+  const wanted = path.split("/")
+  const segments = template.split("/")
+  return segments.length === wanted.length && segments.every((s, i) => s.startsWith("{") || s === wanted[i])
 }
 
 // The reply, or hold, naming the most of the query wins; of two naming as many, the later.

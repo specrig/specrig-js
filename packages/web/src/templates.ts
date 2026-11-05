@@ -174,7 +174,7 @@ Steps import \`Given\`, \`When\`, \`Then\` from \`tests/steps/bdd.ts\` and recei
 \`edges\` fixture, with an entry for each backend \`harness.config.ts\` names:
 
 - \`edges.<backend>.reply(method, path, status, body)\` — what the backend answers,
-  set in the step that the case's reason belongs to;
+  set in the step that names the situation;
 - \`edges.<backend>.replyTo(method, path, query, status, body)\` — the same, for a
   request whose query has these values: the reply naming the most of them wins,
   and \`reply\` is the one naming none;

@@ -188,7 +188,7 @@ export default defineConfig({
 |---|---|
 | `backends` | origins stood in for; `field` or `env` is the setting that points the app at one |
 | `pages` | origins the app sends its users to; a navigation there is recorded in `edges.visited` and answered with an empty page |
-| `assets` | origins the app loads images or scripts from; answered empty |
+| `assets` | origins the app loads images or scripts from; answered empty, or with `live: true` by the origin itself, and the run then needs the network |
 | `runtime` | the script the harness serves at `path` as `window.<global>`: the fields that point at stand-ins, and the constants |
 | `build` | the constants the build is given, beside the variables that point at stand-ins |
 | `surface` | the class through which the app sends its requests; `tsconfig` and `sources` if not `tsconfig.app.json` and `src` |

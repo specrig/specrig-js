@@ -17,7 +17,7 @@ export function harness<const C extends Config>(config: C) {
     check: edge.contract ? new Contract(resolve(config, edge.contract), name, edge.failure) : undefined,
   }))
   const pages = new Set(Object.values(config.pages ?? {}).map((page) => page.origin))
-  const assets = new Set(Object.values(config.assets ?? {}).map((asset) => asset.origin))
+  const assets = new Map(Object.values(config.assets ?? {}).map((asset) => [asset.origin, asset.live]))
   const script = runtimeScript(config)
   const features = resolve(config, config.features ?? "tests/feature")
 
@@ -47,6 +47,8 @@ export function harness<const C extends Config>(config: C) {
           } else if (pages.has(url.origin)) {
             edges.visited.push(url)
             await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>stand-in</title>" })
+          } else if (assets.get(url.origin)) {
+            await route.continue()
           } else if (assets.has(url.origin)) {
             await route.fulfill({ status: 204 })
           } else {

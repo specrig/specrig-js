@@ -28,7 +28,7 @@ export type Config = {
   }
   backends: Record<string, BackendConfig>
   pages?: Record<string, PageConfig>
-  assets?: Record<string, { origin: string }>
+  assets?: Record<string, { origin: string; live?: boolean }>
   surface: { client: string; tsconfig?: string; sources?: string }
 }
 

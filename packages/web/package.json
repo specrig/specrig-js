@@ -1,6 +1,6 @@
 {
   "name": "@specrig/web",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "A Playwright harness for a web app developed specification first: backends stood in for by their contract, records of what the app can request and what its cases make it send, and the rules of its Rule #11 modes, for the plugin that enforces them.",
   "keywords": [
     "playwright",

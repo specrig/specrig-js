@@ -45,16 +45,6 @@ export class Backend {
     this.replies.set(key, [...others, { query, status, body, headers }])
   }
 
-  private repliesTo(method: string, path: string): Reply[] {
-    const exact = this.replies.get(`${method} ${path}`)
-    if (exact) {
-      return exact
-    }
-    const prefix = `${method} `
-    const template = [...this.replies.keys()].find((key) => key.startsWith(prefix) && takes(key.slice(prefix.length), path))
-    return template ? this.replies.get(template)! : []
-  }
-
   // The requests the query takes wait until a step releases them: what the app shows while
   // it waits, which of two answers it takes first, and that it gives up on one in time.
   hold(method: string, path: string, query: Query = {}): void {
@@ -108,7 +98,7 @@ export class Backend {
     this.trace.sent(this.contract?.name(request.method(), url.pathname) ?? key, body)
     this.violations.push(...(this.contract?.request(request.method(), url.pathname, body) ?? []))
 
-    const hold = pick(this.holds.get(key) ?? [], url.searchParams)
+    const hold = pick(declared(this.holds, request.method(), url.pathname), url.searchParams)
     if (hold) {
       hold.waiting.push(route)
       this.trace.held(request)
@@ -121,7 +111,7 @@ export class Backend {
     const request = route.request()
     const url = new URL(request.url())
     const key = `${request.method()} ${url.pathname}`
-    const reply = pick(this.repliesTo(request.method(), url.pathname), url.searchParams)
+    const reply = pick(declared(this.replies, request.method(), url.pathname), url.searchParams)
     if (!reply) {
       this.unanswered.push(`${key}${url.search}`)
       await route.fulfill({ status: 501, headers: cors, json: { code: "unanswered", message: key } })
@@ -137,10 +127,20 @@ export class Backend {
   }
 }
 
+function declared<T>(declarations: Map<string, T[]>, method: string, path: string): T[] {
+  const exact = declarations.get(`${method} ${path}`)
+  if (exact) {
+    return exact
+  }
+  const prefix = `${method} `
+  const template = [...declarations.keys()].find((key) => key.startsWith(prefix) && takes(key.slice(prefix.length), path))
+  return template ? declarations.get(template)! : []
+}
+
 function takes(template: string, path: string): boolean {
   const wanted = path.split("/")
   const segments = template.split("/")
-  return segments.length === wanted.length && segments.every((s, i) => s.startsWith("{") || s === wanted[i])
+  return segments.length === wanted.length && segments.every((s, i) => (s.startsWith("{") && s.endsWith("}")) || s === wanted[i])
 }
 
 // The reply, or hold, naming the most of the query wins; of two naming as many, the later.

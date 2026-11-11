@@ -129,7 +129,7 @@ Then("they see {string} and {string}", async ({ page }, first: string, second: s
 
 | | |
 |---|---|
-| `edges.<backend>.reply(method, path, status, body, headers?)` | what the backend answers; a segment in braces, `/orders/{id}`, takes any value, and the exact path wins |
+| `edges.<backend>.reply(method, path, status, body, headers?)` | what the backend answers; a segment in braces, `/orders/{id}`, takes any value, and the exact path wins — in every call here that names a path |
 | `edges.<backend>.replyTo(method, path, query, status, body, headers?)` | the same, for a request whose query has these values; the reply naming the most of them wins |
 | `edges.<backend>.hold(method, path, query?)` | the requests the query takes wait until a step releases them; the hold naming the most of the query takes a request |
 | `edges.<backend>.release(method, path, query?)` | answers what that hold kept waiting with what the backend answers by then, and what comes after it at once |

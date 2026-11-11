@@ -137,6 +137,18 @@ test("a held request waits, and is answered on release with what the backend ans
   expect(sent.answer).toMatchObject({ status: 200, json: [quote("Tea")] })
 })
 
+test("a hold on a segment in braces takes any value, and is released by the same path", async () => {
+  const shop = new Backend(new Trace())
+  shop.reply("GET", "/orders/{id}", 200, quote("any"))
+  shop.hold("GET", "/orders/{id}")
+
+  const sent = await send(shop, "GET", "https://shop.test/orders/7")
+  expect(sent.answer).toBeUndefined()
+
+  await shop.release("GET", "/orders/{id}")
+  expect(sent.answer).toMatchObject({ status: 200, json: quote("any") })
+})
+
 test("a request that comes after the release is answered at once", async () => {
   const shop = new Backend(new Trace())
   shop.reply("GET", "/items", 200, [])

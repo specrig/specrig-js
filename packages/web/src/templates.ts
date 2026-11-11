@@ -179,6 +179,8 @@ Steps import \`Given\`, \`When\`, \`Then\` from \`tests/steps/bdd.ts\` and recei
 - \`edges.<backend>.replyTo(method, path, query, status, body, headers?)\` — the same, for a
   request whose query has these values: the reply naming the most of them wins,
   and \`reply\` is the one naming none;
+- \`edges.<backend>.replyWith(method, path, answer, headers?)\` — the answer worked out
+  from each request, \`[status, body]\`, naming no query as \`reply\` does;
 - \`edges.<backend>.requests(method, path)\` — what reached the backend, with query
   and body, for a \`Then\`;
 - \`edges.visited\` — the URLs the page sent the user to.

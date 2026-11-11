@@ -1,4 +1,4 @@
-export { Backend, type Query, type Received } from "./backend.js"
+export { type Answer, Backend, type Query, type Received } from "./backend.js"
 export {
   type BackendConfig,
   buildEnv,

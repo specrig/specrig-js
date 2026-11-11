@@ -85,6 +85,52 @@ test("a reply's headers are answered beside the ones the stand always sends", as
   expect(headers).toMatchObject({ "content-disposition": 'attachment; filename="export.csv"', "access-control-allow-origin": "*" })
 })
 
+test("an answer is worked out from each request", async () => {
+  const shop = new Backend(new Trace())
+  shop.replyWith("POST", "/orders/{id}", (r) => [201, { id: r.path.split("/").at(-1), sku: (r.body as { sku: string }).sku }], {
+    "x-answer": "own",
+  })
+
+  for (const [id, sku] of [
+    ["1", "a"],
+    ["2", "b"],
+  ]) {
+    expect(await ask(shop, "POST", `https://shop.test/orders/${id}`, { sku })).toMatchObject({
+      status: 201,
+      json: { id, sku },
+      headers: { "x-answer": "own" },
+    })
+  }
+})
+
+test("an answer may change with what reached the backend", async () => {
+  const shop = new Backend(new Trace())
+  shop.replyWith("GET", "/session", () => (shop.requests("GET", "/session").length === 1 ? [401, quote("expired")] : [200, quote("fresh")]))
+
+  expect((await ask(shop, "GET", "https://shop.test/session")).status).toBe(401)
+  expect(await ask(shop, "GET", "https://shop.test/session")).toMatchObject({ status: 200, json: quote("fresh") })
+})
+
+test("an answer worked out is a reply naming no query", async () => {
+  const shop = new Backend(new Trace())
+  shop.replyWith("GET", "/prices", () => [200, quote("worked out")])
+  shop.replyTo("GET", "/prices", { code: "S2" }, 200, quote("S2"))
+
+  expect((await ask(shop, "GET", "https://shop.test/prices?code=S1")).json).toEqual(quote("worked out"))
+  expect((await ask(shop, "GET", "https://shop.test/prices?code=S2")).json).toEqual(quote("S2"))
+  shop.reply("GET", "/prices", 200, quote("declared"))
+  expect((await ask(shop, "GET", "https://shop.test/prices")).json).toEqual(quote("declared"))
+})
+
+test("the contract checks an answer worked out", async () => {
+  const shop = new Backend(new Trace(), new Contract(path.join(import.meta.dirname, "fixtures", "shop.yaml"), "shop", "Error"))
+  shop.replyWith("GET", "/items/{id}", () => [200, { name: "box" }])
+
+  await ask(shop, "GET", "https://shop.test/items/1")
+
+  expect(shop.violations).toHaveLength(1)
+})
+
 test("a call no reply answers is recorded and refused", async () => {
   const shop = new Backend(new Trace())
 

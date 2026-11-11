@@ -6,16 +6,18 @@ export type Query = Record<string, string | string[]>
 
 export type Headers = Record<string, string>
 
-export type Reply = { query: Query; status: number; body?: unknown; headers?: Headers }
-
-type Hold = { query: Query; waiting: Route[] }
-
 export type Received = {
   method: string
   path: string
   query: URLSearchParams
   body: unknown
 }
+
+export type Answer = (received: Received) => [status: number, body?: unknown]
+
+export type Reply = { query: Query; answer: Answer; headers?: Headers }
+
+type Hold = { query: Query; waiting: Route[] }
 
 const cors = {
   "access-control-allow-origin": "*",
@@ -40,9 +42,17 @@ export class Backend {
   }
 
   replyTo(method: string, path: string, query: Query, status: number, body?: unknown, headers?: Headers): void {
+    this.declare(method, path, { query, answer: () => [status, body], headers })
+  }
+
+  replyWith(method: string, path: string, answer: Answer, headers?: Headers): void {
+    this.declare(method, path, { query: {}, answer, headers })
+  }
+
+  private declare(method: string, path: string, reply: Reply): void {
     const key = `${method} ${path}`
-    const others = (this.replies.get(key) ?? []).filter((r) => !sameQuery(r.query, query))
-    this.replies.set(key, [...others, { query, status, body, headers }])
+    const others = (this.replies.get(key) ?? []).filter((r) => !sameQuery(r.query, reply.query))
+    this.replies.set(key, [...others, reply])
   }
 
   // The requests the query takes wait until a step releases them: what the app shows while
@@ -92,11 +102,11 @@ export class Backend {
     }
 
     const url = new URL(request.url())
-    const body = parseBody(request.postData())
+    const got = received(route)
     const key = `${request.method()} ${url.pathname}`
-    this.received.push({ method: request.method(), path: url.pathname, query: url.searchParams, body })
-    this.trace.sent(this.contract?.name(request.method(), url.pathname) ?? key, body)
-    this.violations.push(...(this.contract?.request(request.method(), url.pathname, body) ?? []))
+    this.received.push(got)
+    this.trace.sent(this.contract?.name(request.method(), url.pathname) ?? key, got.body)
+    this.violations.push(...(this.contract?.request(request.method(), url.pathname, got.body) ?? []))
 
     const hold = pick(declared(this.holds, request.method(), url.pathname), url.searchParams)
     if (hold) {
@@ -117,14 +127,21 @@ export class Backend {
       await route.fulfill({ status: 501, headers: cors, json: { code: "unanswered", message: key } })
       return
     }
-    this.violations.push(...(this.contract?.response(request.method(), url.pathname, reply.status, reply.body ?? {}) ?? []))
+    const [status, body] = reply.answer(received(route))
+    this.violations.push(...(this.contract?.response(request.method(), url.pathname, status, body ?? {}) ?? []))
     const headers = { ...cors, ...reply.headers }
-    if (reply.status === 204) {
+    if (status === 204) {
       await route.fulfill({ status: 204, headers })
       return
     }
-    await route.fulfill({ status: reply.status, headers, json: reply.body ?? {} })
+    await route.fulfill({ status, headers, json: body ?? {} })
   }
+}
+
+function received(route: Route): Received {
+  const request = route.request()
+  const url = new URL(request.url())
+  return { method: request.method(), path: url.pathname, query: url.searchParams, body: parseBody(request.postData()) }
 }
 
 function declared<T>(declarations: Map<string, T[]>, method: string, path: string): T[] {

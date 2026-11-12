@@ -131,6 +131,15 @@ test("a timer the test's paused clock holds is not waited for past when it was d
   expect(sent).toEqual([])
 })
 
+test("a tab the page opens is watched from its first document", async ({ context, page }) => {
+  const { trace } = await shop(context, page, `window.open("/next")`)
+  const opened = context.waitForEvent("page")
+
+  await act(page, trace)
+
+  await expect((await opened).getByRole("button")).toBeVisible()
+})
+
 test("a frame's new document ends the timers its old one armed", async ({ context, page }) => {
   const { trace, sent } = await shop(context, page, `setTimeout(() => fetch("/items"), 800); location.href = "/next"`)
 

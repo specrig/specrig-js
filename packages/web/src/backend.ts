@@ -74,8 +74,7 @@ export class Backend {
     this.holds.set(key, holds.filter((h) => h !== hold))
     for (const route of hold.waiting) {
       this.trace.released(route.request())
-      // The app may have given up on it: there is no one left to answer.
-      await this.fulfill(route).catch(() => {})
+      await this.fulfill(route)
     }
   }
 
@@ -114,27 +113,29 @@ export class Backend {
       this.trace.held(request)
       return
     }
+    await this.trace.turn(request)
     await this.fulfill(route)
   }
 
   private async fulfill(route: Route): Promise<void> {
+    const answer = this.answerTo(route)
+    // The app may have given up on it while it waited: there is no one left to answer.
+    await route.fulfill(answer).catch(() => {})
+  }
+
+  private answerTo(route: Route): Parameters<Route["fulfill"]>[0] {
     const request = route.request()
     const url = new URL(request.url())
     const key = `${request.method()} ${url.pathname}`
     const reply = pick(declared(this.replies, request.method(), url.pathname), url.searchParams)
     if (!reply) {
       this.unanswered.push(`${key}${url.search}`)
-      await route.fulfill({ status: 501, headers: cors, json: { code: "unanswered", message: key } })
-      return
+      return { status: 501, headers: cors, json: { code: "unanswered", message: key } }
     }
     const [status, body] = reply.answer(received(route))
     this.violations.push(...(this.contract?.response(request.method(), url.pathname, status, body ?? {}) ?? []))
     const headers = { ...cors, ...reply.headers }
-    if (status === 204) {
-      await route.fulfill({ status: 204, headers })
-      return
-    }
-    await route.fulfill({ status, headers, json: body ?? {} })
+    return status === 204 ? { status, headers } : { status, headers, json: body ?? {} }
   }
 }
 

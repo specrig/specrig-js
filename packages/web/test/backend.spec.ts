@@ -236,13 +236,13 @@ test("releasing what no step held is refused", async () => {
   await expect(shop.release("GET", "/items")).rejects.toThrow("GET /items")
 })
 
-// A page whose button runs `click`, and whose /items the backend stand-in answers.
+// A page whose button runs `click`, and whose every other path the backend stand-in answers.
 async function shopping(context: BrowserContext, page: Page, click: string) {
   const trace = new Trace()
   await trace.watch(context)
   const shop = new Backend(trace)
   await context.route("https://shop.test/**", async (route) => {
-    if (new URL(route.request().url()).pathname === "/items") {
+    if (new URL(route.request().url()).pathname !== "/") {
       await shop.answer(route)
     } else {
       await route.fulfill({
@@ -273,6 +273,84 @@ test("a held answer does not keep the step waiting, and the page takes it once r
 
   await shop.release("GET", "/items")
   await expect(page).toHaveTitle("Tea")
+})
+
+test("what a round's answers make the page send is the next round, whichever answer it read first", async ({ context, page }) => {
+  const { trace, shop } = await shopping(
+    context,
+    page,
+    `fetch("/slow").then(() => {
+      const begun = performance.now()
+      while (performance.now() - begun < 150) {}
+      fetch("/after-slow")
+    })
+    fetch("/fast").then(() => fetch("/after-fast"))`,
+  )
+  for (const path of ["/slow", "/fast", "/after-slow", "/after-fast"]) {
+    shop.reply("GET", path, 200, {})
+  }
+
+  await page.getByRole("button").click()
+  await trace.settle()
+
+  const round = Object.fromEntries(trace.records.map((r) => [r.name, r.round]))
+  expect(round["GET /slow"]).toBe(round["GET /fast"])
+  expect(round["GET /after-slow"]).toBe(round["GET /after-fast"])
+  expect(round["GET /after-fast"]).toBe(round["GET /fast"]! + 1)
+})
+
+test("what the page sends once the user acts again is the next round, though the round before is not answered yet", async ({
+  context,
+  page,
+}) => {
+  const { trace, shop } = await shopping(
+    context,
+    page,
+    `window.clicks = (window.clicks ?? 0) + 1
+    if (window.clicks === 1) {
+      fetch("/menu")
+      setTimeout(() => {}, 300)
+    } else {
+      fetch("/logout")
+    }`,
+  )
+  shop.reply("GET", "/menu", 200, {})
+  shop.reply("GET", "/logout", 200, {})
+
+  await page.getByRole("button").click()
+  await page.getByRole("button").click()
+  await trace.settle()
+
+  const round = Object.fromEntries(trace.records.map((r) => [r.name, r.round]))
+  expect(round["GET /logout"]).toBeGreaterThan(round["GET /menu"]!)
+})
+
+test("what a page has in flight is waited for while it moves through its history", async ({ context, page }) => {
+  const { trace, shop } = await shopping(
+    context,
+    page,
+    `fetch("/items").then(() => fetch("/more")).then(() => { document.title = "loaded" })
+    setTimeout(() => history.replaceState({}, "", "/?q=tea"), 20)`,
+  )
+  shop.reply("GET", "/items", 200, [])
+  shop.reply("GET", "/more", 200, [])
+
+  await page.getByRole("button").click()
+  await trace.settle()
+
+  expect(await page.title()).toBe("loaded")
+})
+
+test("a request a step holds does not keep the rest of its round waiting", async ({ context, page }) => {
+  const { shop } = await shopping(context, page, `fetch("/items"); fetch("/other").then(() => { document.title = "other" })`)
+  shop.reply("GET", "/items", 200, [])
+  shop.reply("GET", "/other", 200, {})
+  shop.hold("GET", "/items")
+
+  await page.getByRole("button").click()
+
+  await expect(page).toHaveTitle("other")
+  await shop.release("GET", "/items")
 })
 
 test("a request the app gives up on, once the test's clock passes its timeout, is not named", async ({ context, page }) => {

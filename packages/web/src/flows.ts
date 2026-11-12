@@ -10,6 +10,7 @@ export type Traced = {
   name: string
   body?: unknown
   step: string
+  round?: number
 }
 
 export type Run = { feature: string; scenario: string; records: Traced[] }
@@ -52,6 +53,20 @@ function leafPaths(body: unknown, into: Set<string>, prefix = ""): void {
   }
 }
 
+// The requests of one round went out in an order of chance: a page sends them as the answers of the round before come in.
+function settled(sends: Traced[]): string[] {
+  const names: string[] = []
+  for (let i = 0; i < sends.length; ) {
+    let j = i + 1
+    while (j < sends.length && sends[i].round !== undefined && sends[j].round === sends[i].round) {
+      j++
+    }
+    names.push(...sends.slice(i, j).map((r) => `${r.kind} ${r.name}`).sort(byBytes))
+    i = j
+  }
+  return names
+}
+
 // A block sent again straight after itself is one pass of a loop.
 function passes(sends: string[]): string[] {
   const out = [...sends]
@@ -83,7 +98,7 @@ export function build(service: string, runs: Run[]): Doc {
     const label = `${run.feature}: ${run.scenario}`
     const records = [...run.records].sort((a, b) => a.seq - b.seq)
     const acting = (r: Traced) => r.step === "Action"
-    const sent = new Map<number, string[]>()
+    const sent = new Map<number, Traced[]>()
     const carried = new Map<number, Map<string, Set<string>>>()
     let last = -1
     records.forEach((r, i) => {
@@ -101,7 +116,7 @@ export function build(service: string, runs: Run[]): Doc {
         leafPaths(r.body, fields)
         outputs.set(message, fields)
         if (last >= 0 && acting(r)) {
-          sent.get(last)!.push(message)
+          sent.get(last)!.push(r)
           const of = carried.get(last)!
           leafPaths(r.body, of.get(message) ?? of.set(message, new Set()).get(message)!)
         }
@@ -109,7 +124,7 @@ export function build(service: string, runs: Run[]): Doc {
     })
     for (const [i, sends] of sent) {
       const message = `${records[i].kind} ${records[i].name}`
-      const key = passes(sends).join("\n")
+      const key = passes(settled(sends)).join("\n")
       const branch = branches.get(message)!.get(key) ?? { ...(key ? { sends: key.split("\n") } : {}), cases: [] }
       branches.get(message)!.set(key, branch)
       if (!branch.cases.includes(label)) {

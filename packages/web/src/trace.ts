@@ -11,6 +11,7 @@ const late = 100
 const quiet = 50
 const binding = "__specrigTimer"
 const idle = "__specrigIdle"
+const input = "__specrigInput"
 
 type Armed = { at: number; due: number }
 
@@ -23,6 +24,10 @@ export class Trace {
   private context?: BrowserContext
   private pending = new Set<Request>()
   private holding = new Set<Request>()
+  private loading = new Set<Frame>()
+  private queued = new Map<Request, () => void>()
+  private conducting = false
+  private round = 0
   private timers = new Map<Frame, Map<number, Armed>>()
   private until = Infinity
   private lastActivity = 0
@@ -38,10 +43,21 @@ export class Trace {
     await context.exposeBinding(binding, ({ frame }, event: "armed" | "done", id: number, delay: number) =>
       event === "armed" ? this.armed(frame, id, delay) : this.done(frame, id),
     )
-    await context.addInitScript(timers, { binding, idle, short })
+    // What the page sends once the user acts is not what the answers of the round caused.
+    await context.exposeBinding(input, () => {
+      this.round++
+    })
+    await context.addInitScript(timers, { binding, idle, input, short })
   }
 
   started(request: Request): void {
+    if (request.isNavigationRequest()) {
+      try {
+        this.loading.add(request.frame())
+      } catch {
+        // A new tab asks for its first document before it has a frame, and that document ends nothing.
+      }
+    }
     this.pending.add(request)
     this.lastActivity = Date.now()
   }
@@ -63,7 +79,11 @@ export class Trace {
   }
 
   // A frame's new document ends what the old one had in flight or armed, and no event says so.
+  // Moving through the page's history keeps its document: no request asks for a new one.
   navigated(frame: Frame): void {
+    if (!this.loading.delete(frame)) {
+      return
+    }
     for (const request of this.pending) {
       if (request.frame() === frame) {
         this.pending.delete(request)
@@ -97,43 +117,73 @@ export class Trace {
   }
 
   sent(route: string, body: unknown): void {
-    this.records.push({ seq: this.records.length, dir: "out", kind: "http", name: route, body, step: this.step })
+    this.records.push({ seq: this.records.length, dir: "out", kind: "http", name: route, body, step: this.step, round: this.round })
   }
 
-  // The quiet is counted once the pages have run what they had queued: a page reads an
-  // answer and renders it before it sends what the render asks for. Whatever happened
-  // meanwhile is waited out the same way again.
+  // What the stand-ins are asked is answered once the pages are quiet, all of it at once: what
+  // those answers make a page send is the next round, whichever of them the page read first.
+  turn(request: Request): Promise<void> {
+    return new Promise((answer) => {
+      this.queued.set(request, answer)
+      if (!this.conducting) {
+        void this.conduct()
+      }
+    })
+  }
+
+  private async conduct(): Promise<void> {
+    this.conducting = true
+    try {
+      while (this.queued.size > 0) {
+        const start = Date.now()
+        await this.quieten(start + horizon, start + 5000, false, false)
+        const round = [...this.queued.values()]
+        this.queued.clear()
+        this.round++
+        round.forEach((answer) => answer())
+      }
+    } finally {
+      this.conducting = false
+    }
+  }
+
   async settle(): Promise<void> {
     const start = Date.now()
-    const deadline = start + 5000
     this.until = start + horizon
     try {
-      for (;;) {
-        const before = this.lastActivity
-        await this.idle(deadline)
-        // A click returns before the page sends what it caused, so after an action the quiet is counted from now too.
-        const since = this.step === "Action" ? Date.now() : 0
-        while (this.busy(since) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-        if (this.lastActivity === before || Date.now() >= deadline) {
-          return
-        }
-      }
+      await this.quieten(this.until, start + 5000, this.step === "Action", true)
     } finally {
       this.until = Infinity
     }
   }
 
-  private busy(since: number): boolean {
-    const sending = [...this.pending].some((request) => !this.holding.has(request))
-    return sending || this.waiting() || Date.now() - Math.max(this.lastActivity, since) < quiet
+  // The quiet is counted once the pages have run what they had queued: a page reads an
+  // answer and renders it before it sends what the render asks for. Whatever happened
+  // meanwhile is waited out the same way again. A step settling waits for the rounds too.
+  private async quieten(until: number, deadline: number, acted: boolean, settling: boolean): Promise<void> {
+    for (;;) {
+      const before = this.lastActivity
+      await this.idle(deadline)
+      // A click returns before the page sends what it caused, so after an action the quiet is counted from now too.
+      const since = acted ? Date.now() : 0
+      while (this.busy(since, until, settling) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      if (this.lastActivity === before || Date.now() >= deadline) {
+        return
+      }
+    }
   }
 
-  private waiting(): boolean {
+  private busy(since: number, until: number, settling: boolean): boolean {
+    const sending = [...this.pending].some((request) => !this.holding.has(request) && (settling || !this.queued.has(request)))
+    return sending || this.waiting(until) || Date.now() - Math.max(this.lastActivity, since) < quiet
+  }
+
+  private waiting(until: number): boolean {
     const now = Date.now()
     for (const [frame, armed] of this.timers) {
-      if (!frame.isDetached() && [...armed.values()].some((t) => t.at <= this.until && now <= t.due + late)) {
+      if (!frame.isDetached() && [...armed.values()].some((t) => t.at <= until && now <= t.due + late)) {
         return true
       }
     }
@@ -159,7 +209,8 @@ export class Trace {
 // `window[idle]()` resolves once the main thread has run what it had queued: a message
 // to itself, queued as a render's next slice is, twice comes back with nothing run
 // before it. requestIdleCallback cannot say so, as Chrome holds it back after input.
-function timers({ binding, idle, short }: { binding: string; idle: string; short: number }): void {
+// The user's press, key or typing is told too; the page's own events are not trusted.
+function timers({ binding, idle, input, short }: { binding: string; idle: string; input: string; short: number }): void {
   type Arm = (handler: TimerHandler, delay?: number, ...args: unknown[]) => number
   type Clear = (id?: number) => void
   const scope = window as unknown as Record<string, unknown>
@@ -234,4 +285,16 @@ function timers({ binding, idle, short }: { binding: string; idle: string; short
         channel.port2.postMessage(0)
       }),
   })
+  for (const type of ["pointerdown", "keydown", "input"]) {
+    window.addEventListener(
+      type,
+      (event) => {
+        const acted = scope[input] as (() => Promise<void>) | undefined
+        if (event.isTrusted) {
+          acted?.().catch(() => {})
+        }
+      },
+      true,
+    )
+  }
 }

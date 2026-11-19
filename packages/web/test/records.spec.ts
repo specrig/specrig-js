@@ -5,7 +5,7 @@ import YAML from "yaml"
 import { build, encode, type Run } from "../src/flows.js"
 import { protocol } from "../src/modes.js"
 
-type Traced = { seq: number; dir: string; kind: string; name: string; step: string; request?: unknown; error?: string }
+type Traced = { seq: number; dir: string; kind: string; name: string; step: string; request?: unknown; error?: string; threads?: number[] }
 type Case = { case: string; records: Traced[] }
 
 const fixtures = path.join(protocol, "fixtures", "records")
@@ -22,6 +22,9 @@ function unseen(trace: Case[]): string[] {
     }
     if (r.error) {
       found.add("refusals")
+    }
+    if (r.threads) {
+      found.add("threads")
     }
   }
   return [...found]

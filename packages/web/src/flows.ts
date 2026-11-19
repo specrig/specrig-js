@@ -24,13 +24,15 @@ export function caseTitle(feature: string, line: number): string | undefined {
   return parsed.find((e) => e.pickle?.location?.line === line)?.pickle?.name
 }
 
-type Branch = { sends?: string[]; sent?: Record<string, string[]>; refused?: string; description?: string; cases: string[] }
+// A message sent, or the sequences that ran side by side.
+export type Send = string | { together: Send[][] }
+type Branch = { sends?: Send[]; sent?: Record<string, string[]>; refused?: string; description?: string; cases: string[] }
 type Input = { message: string; description?: string; fields?: string[]; branches: Branch[] }
 type Output = { message: string; fields?: string[] }
 type Orphan = { anchor: string; description: string }
 export type Doc = { specrig: string; service: string; inputs: Input[]; outputs?: Output[]; orphaned?: Orphan[] }
 
-const format = "flows/1"
+const format = "flows/2"
 
 const header =
   "# Generated from the component suite by specrig: every whole run rewrites the\n" +
@@ -53,28 +55,40 @@ function leafPaths(body: unknown, into: Set<string>, prefix = ""): void {
   }
 }
 
+const spell = (sends: Send[]): string =>
+  sends.map((s) => (typeof s === "string" ? s : `[${s.together.map(spell).join(" & ")}]`)).join(", ")
+
+// Sequences that ran side by side, each written once in the order of its spelling; one left alone is just itself.
+function together(branches: Send[][]): Send[] {
+  const by = new Map(branches.map((b) => [spell(b), b]))
+  if (by.size < 2) {
+    return branches[0] ?? []
+  }
+  return [{ together: [...by.keys()].sort(byBytes).map((k) => by.get(k)!) }]
+}
+
 // The requests of one round went out in an order of chance: a page sends them as the answers of the round before come in.
-function settled(sends: Traced[]): string[] {
-  const names: string[] = []
+function settled(sends: Traced[]): Send[] {
+  const out: Send[] = []
   for (let i = 0; i < sends.length; ) {
     let j = i + 1
     while (j < sends.length && sends[i].round !== undefined && sends[j].round === sends[i].round) {
       j++
     }
-    names.push(...sends.slice(i, j).map((r) => `${r.kind} ${r.name}`).sort(byBytes))
+    out.push(...together(sends.slice(i, j).map((r) => [`${r.kind} ${r.name}`])))
     i = j
   }
-  return names
+  return out
 }
 
 // A block sent again straight after itself is one pass of a loop.
-function passes(sends: string[]): string[] {
+function passes(sends: Send[]): Send[] {
   const out = [...sends]
   for (let folded = true; folded; ) {
     folded = false
     for (let size = 1; size <= out.length / 2 && !folded; size++) {
       for (let i = 0; i + 2 * size <= out.length; i++) {
-        if (out.slice(i, i + size).join("\n") === out.slice(i + size, i + 2 * size).join("\n")) {
+        if (spell(out.slice(i, i + size)) === spell(out.slice(i + size, i + 2 * size))) {
           out.splice(i + size, size)
           folded = true
           break
@@ -86,7 +100,7 @@ function passes(sends: string[]): string[] {
 }
 
 const anchorOf = (input: Input, b: Branch) =>
-  `${input.message} -> ${(b.sends ?? []).join(", ")}${b.refused ? ` (refused ${b.refused})` : ""}`
+  `${input.message} -> ${spell(b.sends ?? [])}${b.refused ? ` (refused ${b.refused})` : ""}`
 
 export function build(service: string, runs: Run[]): Doc {
   const inputs = new Map<string, Input>()
@@ -124,8 +138,9 @@ export function build(service: string, runs: Run[]): Doc {
     })
     for (const [i, sends] of sent) {
       const message = `${records[i].kind} ${records[i].name}`
-      const key = passes(settled(sends)).join("\n")
-      const branch = branches.get(message)!.get(key) ?? { ...(key ? { sends: key.split("\n") } : {}), cases: [] }
+      const settledSends = passes(settled(sends))
+      const key = spell(settledSends)
+      const branch = branches.get(message)!.get(key) ?? { ...(settledSends.length > 0 ? { sends: settledSends } : {}), cases: [] }
       branches.get(message)!.set(key, branch)
       if (!branch.cases.includes(label)) {
         branch.cases.push(label)

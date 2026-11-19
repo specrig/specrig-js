@@ -223,7 +223,7 @@ environment, which Vite prefers to `.env`. The check reads every
 ## The records
 
 Both are specrig's format and say so first — `specrig: surface/1`,
-`specrig: flows/1` — so that `specrig-flows` finds the app by them and reads them
+`specrig: flows/2` — so that `specrig-flows` finds the app by them and reads them
 beside its backends' records. Each is rewritten by
 what has its source, and nothing compares it on the way: a project that rewrites
 them in CI and then runs `git diff --exit-code` sees a record that fell behind as
@@ -336,9 +336,9 @@ text of `specrig.md` — is [specrig's protocol](https://github.com/specrig/prot
 `specrig agents` read, and the fixtures, which the tests run. Every agents fixture
 goes through the check of `AGENTS.md`; a record fixture goes through the flows
 writer, unless it holds what a web app never sends its writer — inputs other than
-`When` steps, outputs other than HTTP, refusals — and the test says which. The
-guard fixtures are the plugin's to run. This repository implements `surface/1`,
-`flows/1`, `rules/1`, `modes/1` and `agents/1`.
+`When` steps, outputs other than HTTP, refusals, threads — and the test says which.
+The guard fixtures are the plugin's to run. This repository implements `surface/1`,
+`flows/2`, `rules/1`, `modes/1` and `agents/1`.
 
 ## Limits
 

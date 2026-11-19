@@ -37,7 +37,7 @@ test("an outline's row is the case of the outline's title filled from the row, w
 })
 
 test("the record says first that it is specrig's", () => {
-  expect(encode(build("shop", [])).split("\n").slice(2, 4)).toEqual(["specrig: flows/1", "service: shop"])
+  expect(encode(build("shop", [])).split("\n").slice(2, 4)).toEqual(["specrig: flows/2", "service: shop"])
 })
 
 // The visitor opens the shop, and it asks for what each request names, in the round it was answered in.
@@ -58,7 +58,7 @@ test("the requests of one round are one branch, whichever went first", () => {
 
   expect(doc.inputs[0].branches).toEqual([
     {
-      sends: ["http GET /prices", "http GET /stock", "http GET /cart"],
+      sends: [{ together: [["http GET /prices"], ["http GET /stock"]] }, "http GET /cart"],
       cases: ["shop.feature: Prices answer first", "shop.feature: Stock answers first"],
     },
   ])

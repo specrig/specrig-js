@@ -38,7 +38,8 @@
     "./cli": {
       "types": "./dist/cli.d.ts",
       "default": "./dist/cli.js"
-    }
+    },
+    "./preload": "./dist/preload.js"
   },
   "files": [
     "dist",

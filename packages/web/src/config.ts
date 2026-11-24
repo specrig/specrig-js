@@ -1,9 +1,14 @@
+import { randomUUID } from "node:crypto"
 import path from "node:path"
+
+// Read in the runner before it starts its workers, so they share it: the app's server is built once per run.
+process.env.SPECRIG_RUN ??= randomUUID()
 
 export type BackendConfig = {
   origin: string
   field?: string
   env?: string
+  serverEnv?: string | string[]
   contract?: string
   failure?: string
 }
@@ -12,6 +17,16 @@ export type PageConfig = {
   origin: string
   field?: string
   env?: string
+  serverEnv?: string | string[]
+}
+
+export type ServerConfig = {
+  command: string
+  build?: string
+  env?: Record<string, string>
+  port?: number
+  preload?: boolean
+  timeout?: number
 }
 
 export type Config = {
@@ -30,6 +45,7 @@ export type Config = {
   pages?: Record<string, PageConfig>
   assets?: Record<string, { origin: string; live?: boolean }>
   surface: { client: string; tsconfig?: string; sources?: string }
+  server?: ServerConfig
 }
 
 const reserved = ["visited", "trace"]
@@ -63,6 +79,13 @@ export function runtimeValues(config: Config): Record<string, unknown> {
 
 export function buildEnv(config: Config): Record<string, string> {
   return { ...Object.fromEntries(pointing(config, "env")), ...config.build?.constants }
+}
+
+export function serverEnv(config: Config): Record<string, string> {
+  const pointed = Object.values({ ...config.backends, ...config.pages }).flatMap((edge) =>
+    [edge.serverEnv ?? []].flat().map((name) => [name, edge.origin]),
+  )
+  return { ...buildEnv(config), ...Object.fromEntries(pointed), ...config.server?.env }
 }
 
 export function coverage(answered: string[], read: string[]): { missing: string[]; unknown: string[] } {

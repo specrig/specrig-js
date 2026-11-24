@@ -22,18 +22,21 @@ export class Trace {
   scenario?: { feature: string; scenario: string }
   private step = ""
   private context?: BrowserContext
+  private app?: string
   private pending = new Set<Request>()
-  private holding = new Set<Request>()
+  private serving = new Set<object>()
+  private holding = new Set<object>()
   private loading = new Set<Frame>()
-  private queued = new Map<Request, () => void>()
+  private queued = new Map<object, () => void>()
   private conducting = false
   private round = 0
   private timers = new Map<Frame, Map<number, Armed>>()
   private until = Infinity
   private lastActivity = 0
 
-  async watch(context: BrowserContext): Promise<void> {
+  async watch(context: BrowserContext, app?: string): Promise<void> {
     this.context = context
+    this.app = app
     context.on("request", (request) => this.started(request))
     context.on("requestfinished", (request) => this.finished(request))
     context.on("requestfailed", (request) => this.finished(request))
@@ -68,13 +71,24 @@ export class Trace {
     this.lastActivity = Date.now()
   }
 
-  // An answer a step holds back is not waited for: a later step lets it go.
-  held(request: Request): void {
-    this.holding.add(request)
+  serverStarted(ticket: object): void {
+    this.serving.add(ticket)
+    this.lastActivity = Date.now()
   }
 
-  released(request: Request): void {
-    this.holding.delete(request)
+  serverFinished(ticket: object): void {
+    this.serving.delete(ticket)
+    this.holding.delete(ticket)
+    this.lastActivity = Date.now()
+  }
+
+  // An answer a step holds back is not waited for: a later step lets it go.
+  held(ticket: object): void {
+    this.holding.add(ticket)
+  }
+
+  released(ticket: object): void {
+    this.holding.delete(ticket)
     this.lastActivity = Date.now()
   }
 
@@ -122,9 +136,9 @@ export class Trace {
 
   // What the stand-ins are asked is answered once the pages are quiet, all of it at once: what
   // those answers make a page send is the next round, whichever of them the page read first.
-  turn(request: Request): Promise<void> {
+  turn(ticket: object): Promise<void> {
     return new Promise((answer) => {
-      this.queued.set(request, answer)
+      this.queued.set(ticket, answer)
       if (!this.conducting) {
         void this.conduct()
       }
@@ -176,7 +190,10 @@ export class Trace {
   }
 
   private busy(since: number, until: number, settling: boolean): boolean {
-    const sending = [...this.pending].some((request) => !this.holding.has(request) && (settling || !this.queued.has(request)))
+    const outstanding = (ticket: object) => !this.holding.has(ticket) && (settling || !this.queued.has(ticket))
+    // While the app's server waits on a stand-in, what the page asked of the app waits on the stand-in too.
+    const waitsOnServer = (request: Request) => this.serving.size > 0 && new URL(request.url()).origin === this.app
+    const sending = [...this.pending].some((request) => !waitsOnServer(request) && outstanding(request)) || [...this.serving].some(outstanding)
     return sending || this.waiting(until) || Date.now() - Math.max(this.lastActivity, since) < quiet
   }
 
@@ -191,7 +208,9 @@ export class Trace {
   }
 
   private async idle(deadline: number): Promise<void> {
-    const frames = this.context?.pages().flatMap((page) => page.frames()) ?? []
+    // A frame whose document the app's server is still rendering runs nothing until the server has its answers.
+    const rendering = (frame: Frame) => this.serving.size > 0 && this.loading.has(frame)
+    const frames = (this.context?.pages().flatMap((page) => page.frames()) ?? []).filter((frame) => !rendering(frame))
     const all = frames.map((frame) =>
       frame
         .evaluate((name) => (window as unknown as Record<string, (() => Promise<void>) | undefined>)[name]?.(), idle)

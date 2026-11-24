@@ -220,6 +220,41 @@ test("the specrig.md init writes has every slot filled, and the mode and area ta
   expect(specrig).toContain("edges.<backend>.replyTo(method, path, query, status, body, headers?)")
 })
 
+const serverApp = () =>
+  app({
+    "package.json": JSON.stringify({
+      name: "cabinet",
+      scripts: { build: "vite build --outDir dist/client && vite build --ssr src/entry-server.ts --outDir dist/server" },
+    }),
+    "src/main.ts": "export const base = import.meta.env.BASE_URL\n",
+  })
+
+test("init points a backend at what the app's server reads, and has the harness start the server", () => {
+  const dir = serverApp()
+
+  init(dir, ["--backend", "api=API_HOST_FOR_SSR,API_HOST_FOR_BROWSER", "--server", "node server/index.js"], preset)
+
+  const config = readFileSync(path.join(dir, "harness.config.ts"), "utf8")
+  expect(config).toContain('serverEnv: ["API_HOST_FOR_SSR", "API_HOST_FOR_BROWSER"]')
+  expect(config).toContain('server: { command: "node server/index.js", build: "npm run build" }')
+  const playwright = readFileSync(path.join(dir, "playwright.config.ts"), "utf8")
+  expect(playwright).not.toContain("webServer")
+  expect(playwright).toContain('import "./harness.config"')
+})
+
+test("init says how to start an app whose build renders on a server", () => {
+  const dir = serverApp()
+  writeFileSync(path.join(dir, "src/main.ts"), "export const api = import.meta.env.VITE_API_URL\n")
+
+  const report = init(dir, ["--backend", "api=VITE_API_URL"], preset)
+
+  expect(report).toContainEqual(expect.stringMatching(/^! the build renders on a server \(--ssr\): with --server/))
+})
+
+test("init refuses several settings for a backend of an app with no server", () => {
+  expect(() => init(buildApp(), ["--backend", "shop=VITE_API_URL,VITE_HELP_URL"], preset)).toThrow(/only an app's server reads more than one/)
+})
+
 test("init refuses a backend setting the app does not read", () => {
   expect(() => init(runtimeApp(), ["--backend", "api=gatewayUrl"], preset)).toThrow(/no setting gatewayUrl/)
 })

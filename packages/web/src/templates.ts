@@ -2,7 +2,7 @@ import { areaRows, modeRows, render } from "./agents.js"
 import { layout } from "./layout.js"
 import type { Area } from "./modes.js"
 
-type Pointer = { field?: string; env?: string }
+type Pointer = { field?: string; env?: string; serverEnv?: string[] }
 
 export type Plan = {
   service: string
@@ -13,6 +13,7 @@ export type Plan = {
   pages: ({ name: string; origin: string } & Pointer)[]
   runtime?: string[]
   build: string[]
+  server?: { command: string; build?: string }
 }
 
 const quoted = (value: string) => JSON.stringify(value)
@@ -22,7 +23,11 @@ function constants(names: string[]): string {
 }
 
 function pointer(edge: Pointer): string[] {
-  return edge.field ? [`field: ${quoted(edge.field)}`] : edge.env ? [`env: ${quoted(edge.env)}`] : []
+  const server = edge.serverEnv ?? []
+  return [
+    ...(edge.field ? [`field: ${quoted(edge.field)}`] : edge.env ? [`env: ${quoted(edge.env)}`] : []),
+    ...(server.length === 0 ? [] : [`serverEnv: ${server.length === 1 ? quoted(server[0]) : `[${server.map(quoted).join(", ")}]`}`]),
+  ]
 }
 
 export function harnessConfig(plan: Plan): string {
@@ -57,11 +62,41 @@ export function harnessConfig(plan: Plan): string {
     const pages = plan.pages.map((p) => `    ${p.name}: { ${[`origin: ${quoted(p.origin)}`, ...pointer(p)].join(", ")} },`)
     out.push("  pages: {", ...pages, "  },")
   }
-  out.push('  surface: { client: "HttpClient" },', "})", "")
+  out.push('  surface: { client: "HttpClient" },')
+  if (plan.server) {
+    const build = plan.server.build ? `, build: ${quoted(plan.server.build)}` : ""
+    out.push(`  server: { command: ${quoted(plan.server.command)}${build} },`)
+  }
+  out.push("})", "")
   return out.join("\n")
 }
 
 export function playwrightConfig(plan: Plan): string {
+  if (plan.server) {
+    return `import { defineConfig, devices } from "@playwright/test"
+import { defineBddConfig } from "playwright-bdd"
+// Read before the workers start, so that they build the app's server once between them.
+import "./harness.config"
+
+const features = defineBddConfig({
+  features: "tests/feature/**/*.feature",
+  steps: ["tests/internal/harness.ts", "tests/steps/**/*.ts"],
+  missingSteps: "fail-on-gen",
+})
+
+export default defineConfig({
+  forbidOnly: true,
+  reporter: [["list"], ["@specrig/web/reporter", { service: ${quoted(plan.service)} }]],
+  use: {
+    ...devices["Desktop Chrome"],
+  },
+  projects: [
+    { name: "harness", testDir: "tests/internal", testMatch: "*.spec.ts" },
+    { name: "feature", testDir: features, dependencies: ["harness"] },
+  ],
+})
+`
+  }
   return `import { webServer } from "${plan.adapter}/playwright"
 import { defineConfig, devices } from "@playwright/test"
 import { defineBddConfig } from "playwright-bdd"

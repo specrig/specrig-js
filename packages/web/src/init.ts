@@ -43,14 +43,24 @@ init lays the harness out in the app:
   --contract <name>=<path>      its OpenAPI document, from the app's directory
   --failure <name>=<schema>     the schema of a 5xx it may answer on any route
   --service <name>              the app's name in its records; package.json's by default
+  --server <command>            the command that starts the app's server, for an app that
+                                renders on one; the harness starts it for every test
 
-A setting is a field of the app's runtime config or a variable its build reads.
+A setting is a field of the app's runtime config or a variable its build reads;
+with --server, also a variable the server reads, and a backend may name several,
+comma-separated.
 Every other one ending in Url or URL is a page the app sends its users to; the
 rest are constants the harness answers empty. No file that exists is written but
 specrig.md, which is the tool's, and an AGENTS.md that lacks the line bringing
 specrig.md in, which gets it at its end.`
 
-type Flags = { backend: Map<string, string | undefined>; contract: Map<string, string>; failure: Map<string, string>; service?: string }
+type Flags = {
+  backend: Map<string, string | undefined>
+  contract: Map<string, string>
+  failure: Map<string, string>
+  service?: string
+  server?: string
+}
 
 function parse(args: string[]): Flags {
   const flags: Flags = { backend: new Map(), contract: new Map(), failure: new Map() }
@@ -85,6 +95,9 @@ function parse(args: string[]): Flags {
       case "--service":
         flags.service = value()
         break
+      case "--server":
+        flags.server = value()
+        break
       default:
         throw new Error(`unknown argument ${arg}\n\n${usage}`)
     }
@@ -115,13 +128,21 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
   const found = preset.settings(dir)
   const runtime = found.runtime ?? []
   const all = [...runtime, ...found.build]
-  if (all.length === 0) {
+  if (all.length === 0 && !flags.server) {
     throw new Error(`${preset.none}: nothing points the app at a stand-in`)
   }
-  const claimed = [...flags.backend.values()].filter((s): s is string => s !== undefined)
-  for (const setting of claimed) {
-    if (!all.includes(setting)) {
-      throw new Error(`the app reads no setting ${setting}; it reads ${all.join(", ")}`)
+  const settingsOf = (setting: string | undefined) => setting?.split(",").filter(Boolean) ?? []
+  const claimed = [...flags.backend.values()].flatMap(settingsOf)
+  if (!flags.server) {
+    for (const [name, setting] of flags.backend) {
+      if (settingsOf(setting).length > 1) {
+        throw new Error(`${name} names several settings; only an app's server reads more than one, given with --server`)
+      }
+    }
+    for (const setting of claimed) {
+      if (!all.includes(setting)) {
+        throw new Error(`the app reads no setting ${setting}; it reads ${all.join(", ")}`)
+      }
     }
   }
   for (const map of [flags.contract, flags.failure]) {
@@ -132,6 +153,12 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
     }
   }
   const point = (setting: string) => (runtime.includes(setting) ? { field: setting } : { env: setting })
+  // What neither the runtime config nor the build reads, the app's server reads from its environment.
+  const pointAll = (settings: string[]) => {
+    const read = settings.find((setting) => all.includes(setting))
+    const server = settings.filter((setting) => setting !== read)
+    return { ...(read ? point(read) : {}), ...(server.length > 0 ? { serverEnv: server } : {}) }
+  }
   const isUrl = (setting: string) => /(Url|URL)$/.test(setting)
   const constant = (setting: string) => !claimed.includes(setting) && !isUrl(setting)
   const installed = path.join(dir, "node_modules", "@playwright", "test", "package.json")
@@ -143,7 +170,7 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
     backends: [...flags.backend].map(([name, setting]) => ({
       name,
       origin: `https://${name}.${service}.test`,
-      ...(setting ? point(setting) : {}),
+      ...pointAll(settingsOf(setting)),
       contract: flags.contract.get(name),
       failure: flags.failure.get(name),
     })),
@@ -155,8 +182,12 @@ function plan(dir: string, flags: Flags, packageJson: Record<string, any>, prese
       }),
     runtime: found.runtime?.filter(constant),
     build: found.build.filter(constant),
+    server: flags.server ? { command: flags.server, build: packageJson.scripts?.build ? "npm run build" : undefined } : undefined,
   }
 }
+
+const rendersOnServer = (packageJson: Record<string, any>) =>
+  Object.values((packageJson.scripts ?? {}) as Record<string, string>).some((script) => /(^|\s)--ssr(\s|=|$)/.test(script))
 
 type Written = "created" | "rewritten" | "current"
 
@@ -211,7 +242,8 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
   }
   const packageJson = readJson(packageFile)
   const config = readSpecrigYaml(dir)
-  const p = plan(dir, parse(args), packageJson, preset)
+  const flags = parse(args)
+  const p = plan(dir, flags, packageJson, preset)
   const report: string[] = []
 
   const files: [string, string][] = [
@@ -282,6 +314,11 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
   if (missing.length > 0) {
     writeFileSync(ignoreFile, `${ignored}${ignored === "" || ignored.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`)
     report.push(`~ .gitignore: ${missing.join(", ")}`)
+  }
+  if (!flags.server && rendersOnServer(packageJson)) {
+    report.push(
+      '! the build renders on a server (--ssr): with --server "<the command that starts it>" the harness starts it for every test and stands in for what it sends',
+    )
   }
   return report
 }

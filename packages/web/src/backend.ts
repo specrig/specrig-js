@@ -17,7 +17,18 @@ export type Answer = (received: Received) => [status: number, body?: unknown]
 
 export type Reply = { query: Query; answer: Answer; headers?: Headers }
 
-type Hold = { query: Query; waiting: Route[] }
+export type Fulfilment = { status: number; headers: Headers; json?: unknown }
+
+export type Exchange = {
+  method: string
+  url: URL
+  body: string | null
+  ticket: object
+  fulfill(answer: Fulfilment): Promise<void>
+  gaveUp(): boolean
+}
+
+type Hold = { query: Query; waiting: Exchange[] }
 
 const cors = {
   "access-control-allow-origin": "*",
@@ -72,9 +83,9 @@ export class Backend {
       throw new Error(`no step held ${key}${size(query) > 0 ? ` ${JSON.stringify(query)}` : ""}`)
     }
     this.holds.set(key, holds.filter((h) => h !== hold))
-    for (const route of hold.waiting) {
-      this.trace.released(route.request())
-      await this.fulfill(route)
+    for (const exchange of hold.waiting) {
+      this.trace.released(exchange.ticket)
+      await this.fulfill(exchange)
     }
   }
 
@@ -82,11 +93,8 @@ export class Backend {
     return [...this.holds.values()]
       .flat()
       .flatMap((h) => h.waiting)
-      .filter((route) => route.request().failure() === null)
-      .map((route) => {
-        const url = new URL(route.request().url())
-        return `${route.request().method()} ${url.pathname}${url.search}`
-      })
+      .filter((exchange) => !exchange.gaveUp())
+      .map((exchange) => `${exchange.method} ${exchange.url.pathname}${exchange.url.search}`)
   }
 
   requests(method: string, path: string): Received[] {
@@ -95,54 +103,63 @@ export class Backend {
 
   async answer(route: Route): Promise<void> {
     const request = route.request()
-    if (request.method() === "OPTIONS") {
-      await route.fulfill({ status: 204, headers: cors })
+    await this.take({
+      method: request.method(),
+      url: new URL(request.url()),
+      body: request.postData(),
+      ticket: request,
+      fulfill: (answer) => route.fulfill(answer),
+      gaveUp: () => request.failure() !== null,
+    })
+  }
+
+  async take(exchange: Exchange): Promise<void> {
+    const { method, url } = exchange
+    if (method === "OPTIONS") {
+      await exchange.fulfill({ status: 204, headers: cors })
       return
     }
 
-    const url = new URL(request.url())
-    const got = received(route)
-    const key = `${request.method()} ${url.pathname}`
+    const got = received(exchange)
+    const key = `${method} ${url.pathname}`
     this.received.push(got)
-    this.trace.sent(this.contract?.name(request.method(), url.pathname) ?? key, got.body)
-    this.violations.push(...(this.contract?.request(request.method(), url.pathname, got.body) ?? []))
+    this.trace.sent(this.contract?.name(method, url.pathname) ?? key, got.body)
+    this.violations.push(...(this.contract?.request(method, url.pathname, got.body) ?? []))
 
-    const hold = pick(declared(this.holds, request.method(), url.pathname), url.searchParams)
+    const hold = pick(declared(this.holds, method, url.pathname), url.searchParams)
     if (hold) {
-      hold.waiting.push(route)
-      this.trace.held(request)
+      hold.waiting.push(exchange)
+      this.trace.held(exchange.ticket)
       return
     }
-    await this.trace.turn(request)
-    await this.fulfill(route)
+    await this.trace.turn(exchange.ticket)
+    await this.fulfill(exchange)
   }
 
-  private async fulfill(route: Route): Promise<void> {
-    const answer = this.answerTo(route)
+  private async fulfill(exchange: Exchange): Promise<void> {
+    const answer = this.answerTo(exchange)
     // The app may have given up on it while it waited: there is no one left to answer.
-    await route.fulfill(answer).catch(() => {})
+    await exchange.fulfill(answer).catch(() => {})
   }
 
-  private answerTo(route: Route): Parameters<Route["fulfill"]>[0] {
-    const request = route.request()
-    const url = new URL(request.url())
-    const key = `${request.method()} ${url.pathname}`
-    const reply = pick(declared(this.replies, request.method(), url.pathname), url.searchParams)
+  private answerTo(exchange: Exchange): Fulfilment {
+    const { method, url } = exchange
+    const key = `${method} ${url.pathname}`
+    const reply = pick(declared(this.replies, method, url.pathname), url.searchParams)
     if (!reply) {
       this.unanswered.push(`${key}${url.search}`)
       return { status: 501, headers: cors, json: { code: "unanswered", message: key } }
     }
-    const [status, body] = reply.answer(received(route))
-    this.violations.push(...(this.contract?.response(request.method(), url.pathname, status, body ?? {}) ?? []))
+    const [status, body] = reply.answer(received(exchange))
+    this.violations.push(...(this.contract?.response(method, url.pathname, status, body ?? {}) ?? []))
     const headers = { ...cors, ...reply.headers }
     return status === 204 ? { status, headers } : { status, headers, json: body ?? {} }
   }
 }
 
-function received(route: Route): Received {
-  const request = route.request()
-  const url = new URL(request.url())
-  return { method: request.method(), path: url.pathname, query: url.searchParams, body: parseBody(request.postData()) }
+function received(exchange: Exchange): Received {
+  const { method, url, body } = exchange
+  return { method, path: url.pathname, query: url.searchParams, body: parseBody(body) }
 }
 
 function declared<T>(declarations: Map<string, T[]>, method: string, path: string): T[] {

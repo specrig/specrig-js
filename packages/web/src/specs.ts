@@ -3,7 +3,7 @@ import { type Config, coverage, runtimeValues } from "./config.js"
 
 // The settings the app reads are the ones its own server answers with.
 export function runtimeTest(config: Config): void {
-  if (!config.runtime) {
+  if (!config.runtime || config.server) {
     return
   }
   const runtime = config.runtime

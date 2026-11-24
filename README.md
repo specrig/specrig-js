@@ -53,6 +53,7 @@ sends its users to; the rest become constants the harness answers empty.
 | `--contract <name>=<path>` | its OpenAPI document, from the app's directory |
 | `--failure <name>=<schema>` | the schema of a 5xx it may answer on any route |
 | `--service <name>` | the app's name in its records; `package.json`'s by default |
+| `--server <command>` | the command that starts the app's server, for an app that renders on one; a backend may then name the variables the server reads, comma-separated |
 
 `init` writes no file that exists, save `specrig.md` and the line an `AGENTS.md`
 lacks. It writes:
@@ -193,6 +194,7 @@ export default defineConfig({
 | `runtime` | the script the harness serves at `path` as `window.<global>`: the fields that point at stand-ins, and the constants |
 | `build` | the constants the build is given, beside the variables that point at stand-ins |
 | `surface` | the class through which the app sends its requests; `tsconfig` and `sources` if not `tsconfig.app.json` and `src` |
+| `server` | the app's own server, for an app that renders on one: see below |
 
 ## Settings: at runtime or at build
 
@@ -219,6 +221,66 @@ any server that serves one.
 `playwright.config.ts` builds the app with the stand-ins' origins in the
 environment, which Vite prefers to `.env`. The check reads every
 `import.meta.env.*` under `src/`.
+
+## An app that renders on a server
+
+An app that renders its pages on a server of its own — its own Express, Nuxt,
+`next start` — asks its backends from there too, where Playwright does not see.
+The harness starts that server for every test, and stands in for what it sends
+as it does for the page:
+
+```ts
+export default defineConfig({
+  // …
+  backends: {
+    api: { origin: "https://api.shop.test", serverEnv: ["API_HOST_FOR_SSR", "API_HOST_FOR_BROWSER"] },
+  },
+  server: {
+    command: "node server/index.js",
+    build: "npm run build",
+    env: { NODE_ENV: "production" },
+  },
+})
+```
+
+| key | |
+|---|---|
+| `server.command` | starts the server, from the app's directory, through the shell |
+| `server.build` | builds what it serves, once a run, before the first test that needs it |
+| `server.env` | the constants the server reads |
+| `server.port` | where it listens, when nothing else can say |
+| `server.preload` | `false` for a server the preload cannot be loaded into |
+| `server.timeout` | how long it may take to listen; 30 s by default |
+| `serverEnv` | on a backend or a page: the variables of the server's that point at it |
+
+Every test has a server of its own, stopped after it: a cache the server fills
+in one test is not what another reads. The page is given the server's address
+as `baseURL`, so `playwright.config.ts` has no `webServer`, and imports
+`harness.config.ts` so that its workers build once between them; `init --server`
+writes it so.
+
+**What the server sends.** The harness starts the server with a module of
+`@specrig/web` loaded into it — through `NODE_OPTIONS` for Node, `BUN_OPTIONS`
+for Bun. It sends what the server's `fetch`, `http.request` and `https.request`
+ask of any origin but its own to the harness, which answers it from the stand-in
+of that origin, with the same replies, holds and contract checks as the page's;
+a request to an origin the config does not name fails the test. A server the
+module cannot be loaded into is given the harness as its `HTTP_PROXY` and
+`HTTPS_PROXY`, and Node's own clients take it with `NODE_USE_ENV_PROXY`: that
+reaches a stand-in with an `http://` origin, and needs `server.port`, or a server
+that listens on `PORT`.
+
+**Where it listens** is what the module hears the server's first `listen` say,
+whatever port it chose; a `PORT` is set all the same, free, for a server that
+reads one.
+
+**The clock.** What a step does to `page.clock` is done to the server's clock
+too: `Date`, the timers, `performance.now` and `AbortSignal.timeout` in its
+process run on the test's time, paused, run for or fixed as the page's are. A
+timer armed before the first call keeps the native clock it was given.
+
+**A server that ends** during a test fails it, with what it printed; whatever
+the server printed is attached to a test that fails.
 
 ## The records
 
@@ -345,6 +407,13 @@ The guard fixtures are the plugin's to run. This repository implements `surface/
 - Vite is the only build tool with an adapter.
 - Requests are read from one client class; an app that calls `fetch` or a library
   directly has no `tests/surface.yaml` to speak of.
+- An app's server is stood in for on Node and Bun. A runtime the preload is not
+  loaded into — Deno, a server not written in JavaScript — is reached only as far
+  as its clients read `HTTP_PROXY`, and keeps its own clock. Workers' `workerd`
+  takes neither.
+- A server's request to a loopback address is to the app itself, and is not
+  stood in for; nor is one sent past `http`, `https`, `fetch` and the proxy, as
+  `undici.request` with a dispatcher of its own.
 
 ## From a checkout
 

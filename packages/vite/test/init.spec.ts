@@ -255,6 +255,18 @@ test("init refuses several settings for a backend of an app with no server", () 
   expect(() => init(buildApp(), ["--backend", "shop=VITE_API_URL,VITE_HELP_URL"], preset)).toThrow(/only an app's server reads more than one/)
 })
 
+test("init warns of a CLAUDE.md of its own that brings neither AGENTS.md nor specrig.md in", () => {
+  const ours = runtimeApp()
+  writeFileSync(path.join(ours, "CLAUDE.md"), "# Our rules\n")
+  const linked = runtimeApp()
+  writeFileSync(path.join(linked, "CLAUDE.md"), "@AGENTS.md\n")
+
+  const warning = expect.stringMatching(/^! CLAUDE\.md is a file of its own/)
+  expect(init(ours, ["--backend", "api=apiUrl"], preset)).toContainEqual(warning)
+  expect(init(linked, ["--backend", "api=apiUrl"], preset)).not.toContainEqual(warning)
+  expect(readFileSync(path.join(ours, "CLAUDE.md"), "utf8")).toBe("# Our rules\n")
+})
+
 test("init refuses a backend setting the app does not read", () => {
   expect(() => init(runtimeApp(), ["--backend", "api=gatewayUrl"], preset)).toThrow(/no setting gatewayUrl/)
 })

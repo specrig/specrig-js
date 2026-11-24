@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { agentsVerdict, referencesSpecrigMd } from "./agents.js"
@@ -272,9 +272,15 @@ export function init(dir: string, args: string[], preset: Preset): string[] {
   mkdirSync(path.join(dir, "tests", "feature"), { recursive: true })
   report.push(agentsMd(dir, p.service))
   report.push({ created: "+ specrig.md", rewritten: "~ specrig.md", current: "= specrig.md — current" }[writeSpecrigMd(dir, preset)])
-  if (!existsSync(path.join(dir, "CLAUDE.md"))) {
-    symlinkSync("AGENTS.md", path.join(dir, "CLAUDE.md"))
+  const claude = path.join(dir, "CLAUDE.md")
+  if (!existsSync(claude)) {
+    symlinkSync("AGENTS.md", claude)
     report.push("+ CLAUDE.md → AGENTS.md")
+  } else if (!lstatSync(claude).isSymbolicLink()) {
+    const text = readFileSync(claude, "utf8")
+    if (!referencesSpecrigMd(text) && !text.includes("@AGENTS.md")) {
+      report.push("! CLAUDE.md is a file of its own, which Claude Code reads instead of AGENTS.md: bring AGENTS.md or specrig.md in from it")
+    }
   }
 
   const wanted: Record<string, string> = {

@@ -141,8 +141,10 @@ Then("they see {string} and {string}", async ({ page }, first: string, second: s
 | `edges.<backend>.frames(path)` | the frames that reached the backend on the path |
 | `edges.visited` | the pages the app sent the user to |
 
-A frame is an object, sent as JSON, or a string, sent as it is; a frame that
-reached the backend is read as JSON where it parses.
+A body is answered as JSON, unless the reply's headers name another
+`content-type`: then a string goes as it is — a script, a CSV, a page. A frame
+is an object, sent as JSON, or a string, sent as it is; a frame that reached the
+backend is read as JSON where it parses.
 
 A call no step answered gets a 501 and fails the test, named. After the test, every
 request and every answer is checked against the backend's contract: an unknown

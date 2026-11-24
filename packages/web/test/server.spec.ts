@@ -128,6 +128,14 @@ withPreload("the time the test fixes is the server's time", async ({ page }) => 
   await expect(page.locator("time")).toHaveText("2026-03-01")
 })
 
+withPreload("a reply that is not JSON reaches the server as it is", async ({ page, edges }) => {
+  edges.api.reply("GET", "/note", 200, "Closed on Sundays", { "content-type": "text/plain" })
+
+  await page.goto("/note")
+
+  await expect(page.getByRole("paragraph")).toHaveText("Closed on Sundays")
+})
+
 withPreload("a socket the server opens fails the test", async ({ page }) => {
   withPreload.fail()
 

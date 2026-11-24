@@ -17,7 +17,7 @@ export type Answer = (received: Received) => [status: number, body?: unknown]
 
 export type Reply = { query: Query; answer: Answer; headers?: Headers }
 
-export type Fulfilment = { status: number; headers: Headers; json?: unknown }
+export type Fulfilment = { status: number; headers: Headers; json?: unknown; body?: string | Buffer }
 
 export type Exchange = {
   method: string
@@ -228,7 +228,14 @@ export class Backend {
     const [status, body] = reply.answer(received(exchange))
     this.violations.push(...(this.contract?.response(method, url.pathname, status, body ?? {}) ?? []))
     const headers = { ...cors, ...reply.headers }
-    return status === 204 ? { status, headers } : { status, headers, json: body ?? {} }
+    if (status === 204) {
+      return { status, headers }
+    }
+    const type = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1]
+    if (type && !/json/i.test(type)) {
+      return { status, headers, body: typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body ?? "") }
+    }
+    return { status, headers, json: body ?? {} }
   }
 }
 

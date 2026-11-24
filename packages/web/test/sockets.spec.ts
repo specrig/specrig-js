@@ -15,6 +15,7 @@ const pages: Record<string, string> = {
     }
   </script>`,
   "/elsewhere": `<script>new WebSocket("wss://elsewhere.example/live")</script>`,
+  "/sdk": `<script src="https://cdn.shop.test/sdk.js"></script><script>document.title = window.sdk?.ready ? "ready" : "missing"</script>`,
 }
 
 const app = http.createServer((request, response) => {
@@ -25,7 +26,7 @@ const app = http.createServer((request, response) => {
 const config = {
   root: "/",
   service: "shop",
-  backends: { api: { origin: "https://api.shop.test" } },
+  backends: { api: { origin: "https://api.shop.test" }, cdn: { origin: "https://cdn.shop.test" } },
   surface: { client: "HttpClient" },
 }
 const shop = harness(config).test
@@ -77,4 +78,12 @@ shop("a socket to an origin the config does not name fails the test", async ({ p
 
   await page.goto("/elsewhere")
   await expect.poll(() => page.evaluate(() => document.readyState)).toBe("complete")
+})
+
+shop("a reply that is not JSON is answered as it is, as a script the page runs", async ({ page, edges }) => {
+  edges.cdn.reply("GET", "/sdk.js", 200, "window.sdk = { ready: true }", { "content-type": "text/javascript" })
+
+  await page.goto("/sdk")
+
+  await expect(page).toHaveTitle("ready")
 })

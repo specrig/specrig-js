@@ -4,7 +4,7 @@ import { Backend } from "../src/backend.js"
 import { Contract } from "../src/contract.js"
 import { Trace } from "../src/trace.js"
 
-type Answer = { status?: number; json?: unknown; headers?: Record<string, string> }
+type Answer = { status?: number; json?: unknown; body?: string; headers?: Record<string, string> }
 
 async function ask(backend: Backend, method: string, url: string, body?: unknown): Promise<Answer> {
   let answer: Answer = {}
@@ -83,6 +83,18 @@ test("a reply's headers are answered beside the ones the stand always sends", as
   const { headers } = await ask(shop, "GET", "https://shop.test/export")
 
   expect(headers).toMatchObject({ "content-disposition": 'attachment; filename="export.csv"', "access-control-allow-origin": "*" })
+})
+
+test("a reply whose content type is not JSON is answered as it is", async () => {
+  const shop = new Backend(new Trace())
+  shop.reply("GET", "/export", 200, "a;b", { "content-type": "text/csv" })
+  shop.reply("GET", "/items", 200, ["a;b"])
+
+  const text = await ask(shop, "GET", "https://shop.test/export")
+  const json = await ask(shop, "GET", "https://shop.test/items")
+
+  expect([text.body, text.json]).toEqual(["a;b", undefined])
+  expect([json.body, json.json]).toEqual([undefined, ["a;b"]])
 })
 
 test("an answer is worked out from each request", async () => {

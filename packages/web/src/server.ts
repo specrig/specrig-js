@@ -100,12 +100,12 @@ function proxyServer(stands: Stands): http.Server {
         body: body.length > 0 ? body.toString("utf8") : null,
         ticket,
         gaveUp: () => gaveUp,
-        fulfill: async ({ status, headers, json }) => {
+        fulfill: async ({ status, headers, json, body }) => {
           if (response.destroyed) {
             return
           }
           response.writeHead(status, json === undefined ? headers : { "content-type": "application/json", ...headers })
-          response.end(json === undefined ? undefined : JSON.stringify(json))
+          response.end(body ?? (json === undefined ? undefined : JSON.stringify(json)))
         },
       })
       return

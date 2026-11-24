@@ -3,6 +3,9 @@ import path from "node:path"
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js"
 import addFormats from "ajv-formats"
 import YAML from "yaml"
+import { type Route, route } from "./routes.js"
+
+const verbs = ["get", "put", "post", "delete", "options", "head", "patch", "trace"]
 
 type Operation = {
   requestBody?: { content?: Record<string, { schema?: unknown }> }
@@ -52,6 +55,14 @@ export class Contract {
       }
     }
     return best?.template
+  }
+
+  routes(): Route[] {
+    return Object.entries(this.paths).flatMap(([template, operations]) =>
+      Object.keys(operations)
+        .filter((method) => verbs.includes(method))
+        .map((method) => route(`${method} ${template}`)),
+    )
   }
 
   // A request is named as the route that takes it, so that it meets the backend's input of the same name.

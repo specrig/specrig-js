@@ -12,6 +12,7 @@ export type BackendConfig = {
   serverEnv?: string | string[]
   contract?: string
   failure?: string
+  routes?: string[]
 }
 
 export type PageConfig = {

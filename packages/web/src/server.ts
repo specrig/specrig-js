@@ -11,7 +11,8 @@ import { buildEnv, type Config, type ServerConfig, serverEnv } from "./config.js
 import type { Trace } from "./trace.js"
 
 export type Stands = {
-  backends: Map<string, Backend>
+  byName: Map<string, Backend>
+  owner: (url: URL, method: string) => Backend | "unserved" | undefined
   assets: Map<string, boolean | undefined>
   outside: string[]
   trace: Trace
@@ -85,7 +86,12 @@ function proxyServer(stands: Stands): http.Server {
     }
     const url = new URL(raw)
     const body = await collect(request)
-    const stand = stands.backends.get(url.origin)
+    const stand = stands.owner(url, request.method ?? "GET")
+    if (stand === "unserved") {
+      stands.outside.push(`${request.method} ${url.href} (from the app's server: no backend on ${url.origin} takes it)`)
+      response.writeHead(502).end()
+      return
+    }
     if (stand) {
       const ticket = {}
       let gaveUp = false

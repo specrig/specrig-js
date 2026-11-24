@@ -175,6 +175,26 @@ shop({ build: "node build.mjs" }, undefined, { BUILD_OUT: out })("the server run
   expect(readFileSync(out, "utf8")).toBe("built")
 })
 
+const sharing = harness({
+  root,
+  service: "shop",
+  backends: {
+    api: { origin: "https://api.shop.test", serverEnv: "API_URL", routes: ["GET /items"] },
+    notes: { origin: "https://api.shop.test", routes: ["GET /note"] },
+  },
+  surface: { client: "HttpClient" },
+  server: { command: "node server.mjs" },
+}).test
+
+sharing("what the server asks of a shared origin is answered by the backend whose route takes it", async ({ page, edges }) => {
+  edges.notes.reply("GET", "/note", 200, "Closed on Sundays", { "content-type": "text/plain" })
+
+  await page.goto("/note")
+
+  await expect(page.getByRole("paragraph")).toHaveText("Closed on Sundays")
+  expect(edges.api.requests("GET", "/note")).toEqual([])
+})
+
 const bun = spawnSync("bun", ["--version"]).status === 0
 const onBun = shop({ command: "bun server.mjs" })
 

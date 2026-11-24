@@ -1,5 +1,6 @@
 import type { Route } from "@playwright/test"
 import type { Contract } from "./contract.js"
+import { overlap, type Route as Served, route, routeOf, spell } from "./routes.js"
 import type { Trace } from "./trace.js"
 
 export type Query = Record<string, string | string[]>
@@ -68,7 +69,22 @@ export class Backend {
   constructor(
     private readonly trace: Trace,
     private readonly contract?: Contract,
+    private readonly own?: { name: string; routes: Served[] },
   ) {}
+
+  private claim(method: string, path: string): void {
+    if (this.own && !this.own.routes.some((r) => overlap(r, route(`${method} ${path}`)))) {
+      throw new Error(`${method} ${path} is not one of ${this.own.name}'s routes`)
+    }
+  }
+
+  private named(method: string, path: string): string {
+    if (this.contract) {
+      return this.contract.name(method, path)
+    }
+    const owned = this.own && routeOf(this.own.routes, method, path)
+    return owned ? spell(owned) : `${method} ${path}`
+  }
 
   reply(method: string, path: string, status: number, body?: unknown, headers?: Headers): void {
     this.replyTo(method, path, {}, status, body, headers)
@@ -83,6 +99,7 @@ export class Backend {
   }
 
   private declare(method: string, path: string, reply: Reply): void {
+    this.claim(method, path)
     const key = `${method} ${path}`
     const others = (this.replies.get(key) ?? []).filter((r) => !sameQuery(r.query, reply.query))
     this.replies.set(key, [...others, reply])
@@ -91,6 +108,7 @@ export class Backend {
   // The requests the query takes wait until a step releases them: what the app shows while
   // it waits, which of two answers it takes first, and that it gives up on one in time.
   hold(method: string, path: string, query: Query = {}): void {
+    this.claim(method, path)
     const key = `${method} ${path}`
     const others = (this.holds.get(key) ?? []).filter((h) => !sameQuery(h.query, query))
     this.holds.set(key, [...others, { query, waiting: [] }])
@@ -124,6 +142,7 @@ export class Backend {
   }
 
   socket(path: string, conversation: Conversation = {}): void {
+    this.claim("WS", path)
     this.conversations.set(`WS ${path}`, [conversation])
   }
 
@@ -196,9 +215,8 @@ export class Backend {
     }
 
     const got = received(exchange)
-    const key = `${method} ${url.pathname}`
     this.received.push(got)
-    this.trace.sent(this.contract?.name(method, url.pathname) ?? key, got.body)
+    this.trace.sent(this.named(method, url.pathname), got.body)
     this.violations.push(...(this.contract?.request(method, url.pathname, got.body) ?? []))
 
     const hold = pick(declared(this.holds, method, url.pathname), url.searchParams)

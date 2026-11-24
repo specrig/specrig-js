@@ -5,6 +5,7 @@ import { Backend } from "./backend.js"
 import { type Config, resolve, runtimeScript } from "./config.js"
 import { Contract } from "./contract.js"
 import { caseTitle } from "./flows.js"
+import { overlap, type Route, route, spell, takes } from "./routes.js"
 import { AppServer, built, type Stands } from "./server.js"
 import { Trace } from "./trace.js"
 
@@ -62,7 +63,33 @@ export function harness<const C extends Config>(config: C) {
     origin: edge.origin,
     contract: edge.contract,
     check: edge.contract ? new Contract(resolve(config, edge.contract), name, edge.failure) : undefined,
+    declared: (edge.routes ?? []).map(route),
   }))
+  const byOrigin = new Map<string, typeof backends>()
+  for (const b of backends) {
+    byOrigin.set(b.origin, [...(byOrigin.get(b.origin) ?? []), b])
+  }
+  const routesOf = new Map<string, Route[]>()
+  for (const [origin, group] of byOrigin) {
+    if (group.length === 1) {
+      continue
+    }
+    for (const b of group) {
+      const routes = [...(b.check?.routes() ?? []), ...b.declared]
+      if (routes.length === 0) {
+        throw new Error(`harness config: ${b.name} shares ${origin} with others and names no routes; give it a contract or routes`)
+      }
+      routesOf.set(b.name, routes)
+    }
+    const clashes = group.flatMap((a, i) =>
+      group
+        .slice(i + 1)
+        .flatMap((b) => routesOf.get(a.name)!.flatMap((ra) => routesOf.get(b.name)!.filter((rb) => overlap(ra, rb)).map((rb) => `${a.name}'s ${spell(ra)} and ${b.name}'s ${spell(rb)}`))),
+    )
+    if (clashes.length > 0) {
+      throw new Error(`harness config: on ${origin} one request could be taken by ${clashes.join("; by ")}`)
+    }
+  }
   const pages = new Set(Object.values(config.pages ?? {}).map((page) => page.origin))
   const assets = new Map(Object.values(config.assets ?? {}).map((asset) => [asset.origin, asset.live]))
   const script = runtimeScript(config)
@@ -74,9 +101,26 @@ export function harness<const C extends Config>(config: C) {
   const test = base.extend<Fixtures>({
     specrigStands: async ({}, use) => {
       const trace = new Trace()
-      const stands = new Map(backends.map((b) => [b.origin, new Backend(trace, b.check)]))
-      config.boot?.(Object.fromEntries(backends.map((b) => [b.name, stands.get(b.origin)!])))
-      await use({ backends: stands, assets, outside: [], trace })
+      const byName = new Map(
+        backends.map((b) => {
+          const routes = routesOf.get(b.name)
+          return [b.name, new Backend(trace, b.check, routes && { name: b.name, routes })]
+        }),
+      )
+      const owner = (url: URL, method: string): Backend | "unserved" | undefined => {
+        const group = byOrigin.get(url.origin)
+        if (!group) {
+          return undefined
+        }
+        // A preflight names no route of its own: any backend of the origin answers it.
+        if (group.length === 1 || method === "OPTIONS") {
+          return byName.get(group[0].name)
+        }
+        const taker = group.find((b) => routesOf.get(b.name)!.some((r) => takes(r, method, url.pathname)))
+        return taker ? byName.get(taker.name) : "unserved"
+      }
+      config.boot?.(Object.fromEntries(byName))
+      await use({ byName, owner, assets, outside: [], trace })
     },
     specrigServer: [
       async ({ specrigStands }, use, testInfo) => {
@@ -100,9 +144,8 @@ export function harness<const C extends Config>(config: C) {
     },
     edges: [
       async ({ context, baseURL, specrigStands, specrigServer }, use, testInfo) => {
-        const { trace, outside } = specrigStands
-        const stands = specrigStands.backends
-        const edges = Object.fromEntries(backends.map((b) => [b.name, stands.get(b.origin)])) as Edges<C>
+        const { trace, outside, owner, byName } = specrigStands
+        const edges = Object.fromEntries(byName) as Edges<C>
         Object.assign(edges, { visited: [], trace })
         const app = new URL(baseURL!).origin
 
@@ -113,13 +156,16 @@ export function harness<const C extends Config>(config: C) {
 
         await context.route("**/*", async (route) => {
           const url = new URL(route.request().url())
-          const stand = stands.get(url.origin)
+          const stand = owner(url, route.request().method())
           if (url.origin === app) {
             if (script && url.pathname === config.runtime?.path) {
               await route.fulfill({ contentType: "application/javascript", body: script })
             } else {
               await route.continue()
             }
+          } else if (stand === "unserved") {
+            outside.push(`${route.request().method()} ${url.href} (no backend on ${url.origin} takes it)`)
+            await route.abort()
           } else if (stand) {
             await stand.answer(route)
           } else if (pages.has(url.origin)) {
@@ -137,11 +183,12 @@ export function harness<const C extends Config>(config: C) {
 
         await context.routeWebSocket(/.*/, async (ws) => {
           const url = new URL(ws.url())
-          const origin = new URL(url.href.replace(/^ws/, "http")).origin
-          const stand = stands.get(origin)
+          const asHttp = new URL(url.href.replace(/^ws/, "http"))
+          const origin = asHttp.origin
+          const stand = owner(asHttp, "WS")
           if (origin === app || assets.get(origin)) {
             ws.connectToServer()
-          } else if (stand) {
+          } else if (stand && stand !== "unserved") {
             stand.connect({
               url,
               send: (text) => ws.send(text),
@@ -150,7 +197,7 @@ export function harness<const C extends Config>(config: C) {
               onClose: (handler) => ws.onClose(() => handler()),
             })
           } else {
-            outside.push(`WS ${url.href}`)
+            outside.push(`WS ${url.href}${stand === "unserved" ? ` (no backend on ${origin} takes it)` : ""}`)
             await ws.close()
           }
         })
@@ -164,9 +211,9 @@ export function harness<const C extends Config>(config: C) {
             contentType: "application/json",
           })
         }
-        expect(outside, "requests to an origin the harness config does not name").toEqual([])
+        expect(outside, "requests no backend of the harness config takes").toEqual([])
         for (const b of backends) {
-          const stand = stands.get(b.origin)!
+          const stand = byName.get(b.name)!
           expect(stand.unanswered, `${b.name} calls no step declared`).toEqual([])
           expect(stand.unreleased, `${b.name} answers a step held and none released`).toEqual([])
           expect(stand.violations, `what ${b.name}'s contract, ${b.contract}, does not allow`).toEqual([])

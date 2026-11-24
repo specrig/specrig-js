@@ -228,7 +228,9 @@ Steps import \`Given\`, \`When\`, \`Then\` from \`tests/steps/bdd.ts\` and recei
 
 A call to a backend no step answered fails the test, and so does a socket no
 step declared, and a request or a socket to an origin \`harness.config.ts\` does
-not name.
+not name, or to a route none of its backends takes. Backends that share an
+origin each take their own routes: a reply declared on a route of another fails
+the step.
 
 A backend \`harness.config.ts\` names a contract for is held to it: every answer a
 step declares, and every body the app sends, is checked against the contract, so

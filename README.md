@@ -150,6 +150,23 @@ A call no step answered gets a 501 and fails the test, named. After the test, ev
 request and every answer is checked against the backend's contract: an unknown
 route, an undocumented status, or a body of the wrong shape fails it.
 
+Backends may share an origin, as services behind one gateway do. Each then names
+the routes it takes — its contract's, and `routes` beside it or in its place:
+
+```ts
+backends: {
+  apostle: { origin: "https://api.shop.test", contract: "../docs/customer.yaml" },
+  catalog: { origin: "https://api.shop.test", routes: ["POST /api/catalog/product", "WS /api/catalog/live"] },
+},
+```
+
+A request is the backend's whose route takes it, whichever client of the app
+sent it. Two backends whose routes could take one request are refused before the
+first test, naming both routes: there is no precedence among them, the more
+exact included. A request no route takes fails the test, and a step declaring a
+reply, a hold or a socket for a route its backend does not take fails at once.
+A backend alone on its origin takes everything sent there.
+
 A socket the page opens to a backend's host, `wss://` for `https://`, is that
 backend's; one it opens to the app's own origin or a live asset is let through,
 and one to any other origin fails the test, as a request would. A socket no step
@@ -201,7 +218,7 @@ export default defineConfig({
 
 | key | |
 |---|---|
-| `backends` | origins stood in for; `field` or `env` is the setting that points the app at one |
+| `backends` | origins stood in for; `field` or `env` is the setting that points the app at one, `routes` what one takes of an origin it shares |
 | `pages` | origins the app sends its users to; a navigation there is recorded in `edges.visited` and answered with an empty page |
 | `assets` | origins the app loads images or scripts from; answered empty, or with `live: true` by the origin itself, and the run then needs the network |
 | `runtime` | the script the harness serves at `path` as `window.<global>`: the fields that point at stand-ins, and the constants |

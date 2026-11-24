@@ -12,7 +12,12 @@ export const layout = {
 } satisfies Layout
 
 export const defaultAreas: Area[] = [
-  { name: "deps", paths: ["package.json", "package-lock.json"], modes: ["platform"], grant: ["redgreen"] },
+  {
+    name: "deps",
+    paths: ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lock", "bun.lockb"],
+    modes: ["platform"],
+    grant: ["redgreen"],
+  },
   { name: "flows", paths: ["tests/flows.yaml"], modes: ["spec", "redgreen", "platform"] },
   { name: "steps", paths: ["tests/steps/"], grant: ["platform"] },
 ]

@@ -293,7 +293,7 @@ the class table; one without follows it, and its grant only adds:
 
 | area | paths | open in | granted in |
 |---|---|---|---|
-| deps | `package.json`, `package-lock.json` | platform | redgreen |
+| deps | `package.json` and the lockfile: `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml` with `pnpm-workspace.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb` | platform | redgreen |
 | flows | `tests/flows.yaml` | spec, redgreen, platform | — |
 | steps | `tests/steps/` | as the table says | platform |
 

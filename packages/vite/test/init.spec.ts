@@ -211,7 +211,7 @@ test("the specrig.md init writes has every slot filled, and the mode and area ta
   expect(specrig).toContain(`| area | paths | open in | granted in |
 |---|---|---|---|
 | contracts | \`../docs/api/\` | spec, platform | — |
-| deps | \`package.json\`, \`package-lock.json\` | platform | redgreen |
+| deps | \`package.json\`, \`package-lock.json\`, \`npm-shrinkwrap.json\`, \`pnpm-lock.yaml\`, \`pnpm-workspace.yaml\`, \`yarn.lock\`, \`bun.lock\`, \`bun.lockb\` | platform | redgreen |
 | flows | \`tests/flows.yaml\` | spec, redgreen, platform | — |
 | steps | \`tests/steps/\` | as the table says | platform |
 `)

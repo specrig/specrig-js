@@ -14,6 +14,12 @@ const service = (specrigYaml?: string) => {
   return dir
 }
 
+test("the dependencies are the manifest and the lockfile of whichever package manager the app has", () => {
+  expect(areas(undefined).find((a) => a.name === "deps")?.paths).toEqual(
+    expect.arrayContaining(["package.json", "package-lock.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lock"]),
+  )
+})
+
 test("specrig.yaml replaces a default area by its name and adds its own", () => {
   const got = areas({
     agents: {
@@ -25,7 +31,7 @@ test("specrig.yaml replaces a default area by its name and adds its own", () => 
   })
 
   expect(got).toEqual([
-    { name: "deps", paths: ["package.json", "package-lock.json"], modes: ["platform"], grant: ["redgreen"] },
+    expect.objectContaining({ name: "deps" }),
     { name: "events", paths: ["../shared/events/"], modes: ["spec", "platform"] },
     { name: "flows", paths: ["tests/flows.yaml"], modes: ["spec", "redgreen", "platform"] },
     { name: "steps", paths: ["tests/steps/", "tests/support/"], grant: ["platform"] },

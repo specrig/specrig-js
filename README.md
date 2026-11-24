@@ -452,6 +452,8 @@ The guard fixtures are the plugin's to run. This repository implements `surface/
 - A server's request to a loopback address is to the app itself, and is not
   stood in for; nor is one sent past `http`, `https`, `fetch` and the proxy, as
   `undici.request` with a dispatcher of its own.
+- Service workers are blocked, since what one fetches for the page passes no
+  stand-in: a page's offline behaviour is not specified here.
 - Sockets are stood in for on the page. One the app's server opens through
   `http` fails the test; one it opens through Node's own `WebSocket` is not seen.
 - Frames are not written to `tests/flows.yaml`: flows/2 has no kind for them.

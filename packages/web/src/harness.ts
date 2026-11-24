@@ -99,6 +99,10 @@ export function harness<const C extends Config>(config: C) {
   const starting = (config.server?.timeout ?? 30_000) + 10_000 + (config.server?.build ? 30 * 60_000 : 0)
   type Fixtures = { edges: Edges<C>; specrigStands: Stands; specrigServer: AppServer | undefined }
   const test = base.extend<Fixtures>({
+    // What a service worker fetches for the page, context.route never sees: it would reach past the stand-ins.
+    serviceWorkers: async ({}, use) => {
+      await use("block")
+    },
     specrigStands: async ({}, use) => {
       const trace = new Trace()
       const byName = new Map(

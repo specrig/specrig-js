@@ -152,16 +152,23 @@ shop({ env: { BOOT: "1" } }, undefined, {}, (backends) => backends.api.reply("GE
   },
 )
 
-shop({ preload: false, env: { SSR_PORT: "env" } }, "http://api.shop.test")(
-  "a server without the preload is answered through the proxy its environment names",
-  async ({ page, edges }) => {
-    edges.api.reply("GET", "/items", 200, tea)
+const withoutPreload = shop({ preload: false, env: { SSR_PORT: "env" } }, "http://api.shop.test")
 
-    await page.goto("/")
+withoutPreload("a server without the preload is answered through the proxy its environment names", async ({ page, edges }) => {
+  edges.api.reply("GET", "/items", 200, tea)
 
-    await expect(page.getByRole("listitem")).toHaveText(["Tea", "Coffee"])
-  },
-)
+  await page.goto("/")
+
+  await expect(page.getByRole("listitem")).toHaveText(["Tea", "Coffee"])
+})
+
+withoutPreload("a server that tunnels plain http through the proxy is answered too", async ({ page, edges }) => {
+  edges.api.reply("GET", "/items", 200, tea)
+
+  await page.goto("/tunneled")
+
+  await expect(page.getByRole("listitem")).toHaveText(["Tea", "Coffee"])
+})
 
 // One file for the run, whichever worker builds: the build is done once for all of them.
 const builds = path.join(os.tmpdir(), "specrig-test-builds")

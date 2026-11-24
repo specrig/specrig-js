@@ -38,12 +38,35 @@ function viaProxy(url) {
   })
 }
 
+function viaTunnel(url) {
+  const proxy = new URL(process.env.HTTP_PROXY)
+  const target = new URL(url)
+  return new Promise((done, fail) => {
+    http
+      .request({ hostname: proxy.hostname, port: proxy.port, method: "CONNECT", path: `${target.hostname}:${target.port || 80}` })
+      .on("connect", (_, socket) => {
+        http
+          .get({ createConnection: () => socket, path: target.pathname, headers: { host: target.host } }, (response) => {
+            let body = ""
+            response.on("data", (chunk) => {
+              body += chunk
+            })
+            response.on("end", () => done(JSON.parse(body)))
+          })
+          .on("error", fail)
+      })
+      .on("error", fail)
+      .end()
+  })
+}
+
 const list = (items) => `<ul>${items.map((item) => `<li>${item.name}</li>`).join("")}</ul>`
 
 const pages = {
   "/": async () => list(await (await fetch(`${api}/items`)).json()),
   "/http": async () => list(await viaHttp(`${api}/items`)),
   "/proxied": async () => list(await viaProxy(`${api}/items`)),
+  "/tunneled": async () => list(await viaTunnel(`${api}/items`)),
   "/note": async () => `<p>${await (await fetch(`${api}/note`)).text()}</p>`,
   "/live": async () => {
     const upgrade = { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" }

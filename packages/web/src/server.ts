@@ -78,8 +78,10 @@ async function forward(request: http.IncomingMessage, url: URL, body: Buffer, re
 }
 
 function proxyServer(stands: Stands): http.Server {
+  const tunnels = new WeakSet<net.Socket>()
   const server = http.createServer(async (request, response) => {
-    const raw = request.headers["x-specrig-target"] ?? (/^https?:\/\//.test(request.url ?? "") ? request.url : undefined)
+    const tunneled = tunnels.has(request.socket) && request.headers.host ? `http://${request.headers.host}${request.url}` : undefined
+    const raw = request.headers["x-specrig-target"] ?? (/^https?:\/\//.test(request.url ?? "") ? request.url : tunneled)
     if (typeof raw !== "string") {
       response.writeHead(400).end("specrig: a request that names no origin")
       return
@@ -132,11 +134,21 @@ function proxyServer(stands: Stands): http.Server {
     stands.outside.push(`WS ${target} (from the app's server: a socket the server opens is not stood in for)`)
     socket.destroy()
   })
-  server.on("connect", (request: http.IncomingMessage, socket: net.Socket) => {
-    stands.outside.push(
-      `CONNECT ${request.url} (from the app's server, through its proxy: a stand-in reached that way needs an http:// origin)`,
-    )
-    socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
+  server.on("connect", (request: http.IncomingMessage, socket: net.Socket, head: Buffer) => {
+    if (request.url?.endsWith(":443")) {
+      stands.outside.push(
+        `CONNECT ${request.url} (from the app's server, through its proxy: a stand-in reached that way needs an http:// origin)`,
+      )
+      socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
+      return
+    }
+    // Node 24's own clients tunnel plain HTTP through a proxy too: what comes through is served as any request.
+    tunnels.add(socket)
+    socket.write("HTTP/1.1 200 Connection Established\r\n\r\n")
+    if (head.length > 0) {
+      socket.unshift(head)
+    }
+    server.emit("connection", socket)
   })
   return server
 }

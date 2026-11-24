@@ -136,11 +136,22 @@ Then("they see {string} and {string}", async ({ page }, first: string, second: s
 | `edges.<backend>.hold(method, path, query?)` | the requests the query takes wait until a step releases them; the hold naming the most of the query takes a request |
 | `edges.<backend>.release(method, path, query?)` | answers what that hold kept waiting with what the backend answers by then, and what comes after it at once |
 | `edges.<backend>.requests(method, path)` | what reached the backend, with query and body |
+| `edges.<backend>.socket(path, { open?, message? })` | the backend's side of a socket the page opens to it: the frames it says once the socket is open, and the frames it answers each frame with |
+| `edges.<backend>.push(path, frame)` | a frame the backend sends to every socket the page has open on the path, once one is |
+| `edges.<backend>.frames(path)` | the frames that reached the backend on the path |
 | `edges.visited` | the pages the app sent the user to |
+
+A frame is an object, sent as JSON, or a string, sent as it is; a frame that
+reached the backend is read as JSON where it parses.
 
 A call no step answered gets a 501 and fails the test, named. After the test, every
 request and every answer is checked against the backend's contract: an unknown
 route, an undocumented status, or a body of the wrong shape fails it.
+
+A socket the page opens to a backend's host, `wss://` for `https://`, is that
+backend's; one it opens to the app's own origin or a live asset is let through,
+and one to any other origin fails the test, as a request would. A socket no step
+declared a conversation for fails the test too.
 
 A held request does not keep the harness waiting after a step, and one no step
 released fails the test, named, unless the app gave up on it. So a case can see what
@@ -414,6 +425,9 @@ The guard fixtures are the plugin's to run. This repository implements `surface/
 - A server's request to a loopback address is to the app itself, and is not
   stood in for; nor is one sent past `http`, `https`, `fetch` and the proxy, as
   `undici.request` with a dispatcher of its own.
+- Sockets are stood in for on the page. One the app's server opens through
+  `http` fails the test; one it opens through Node's own `WebSocket` is not seen.
+- Frames are not written to `tests/flows.yaml`: flows/2 has no kind for them.
 
 ## From a checkout
 

@@ -121,6 +121,11 @@ function proxyServer(stands: Stands): http.Server {
     stands.outside.push(`${request.method} ${url.href} (from the app's server)`)
     response.writeHead(502).end()
   })
+  server.on("upgrade", (request: http.IncomingMessage, socket: net.Socket) => {
+    const target = request.headers["x-specrig-target"] ?? request.url
+    stands.outside.push(`WS ${target} (from the app's server: a socket the server opens is not stood in for)`)
+    socket.destroy()
+  })
   server.on("connect", (request: http.IncomingMessage, socket: net.Socket) => {
     stands.outside.push(
       `CONNECT ${request.url} (from the app's server, through its proxy: a stand-in reached that way needs an http:// origin)`,

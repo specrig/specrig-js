@@ -42,6 +42,11 @@ const pages = {
   "/": async () => list(await (await fetch(`${api}/items`)).json()),
   "/http": async () => list(await viaHttp(`${api}/items`)),
   "/proxied": async () => list(await viaProxy(`${api}/items`)),
+  "/live": async () => {
+    const upgrade = { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" }
+    await new Promise((done) => http.get(`${api}/live`, { headers: upgrade }).on("upgrade", done).on("error", done).on("response", done))
+    return "<p>tried</p>"
+  },
   "/elsewhere": async () => {
     await fetch("https://elsewhere.example/x").catch(() => {})
     return "<p>done</p>"

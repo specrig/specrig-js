@@ -71,6 +71,10 @@ export class Trace {
     this.lastActivity = Date.now()
   }
 
+  touch(): void {
+    this.lastActivity = Date.now()
+  }
+
   serverStarted(ticket: object): void {
     this.serving.add(ticket)
     this.lastActivity = Date.now()

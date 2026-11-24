@@ -30,6 +30,25 @@ export type Exchange = {
 
 type Hold = { query: Query; waiting: Exchange[] }
 
+export type Frame = string | object
+
+export type Conversation = {
+  open?: () => Frame[]
+  message?: (frame: unknown) => Frame[]
+}
+
+export type Socket = {
+  url: URL
+  send(text: string): void
+  close(): void
+  onMessage(handler: (text: string) => void): void
+  onClose(handler: () => void): void
+}
+
+type Open = { path: string; socket: Socket; closed: boolean }
+
+const encode = (frame: Frame) => (typeof frame === "string" ? frame : JSON.stringify(frame))
+
 const cors = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE",
@@ -39,6 +58,9 @@ const cors = {
 export class Backend {
   private replies = new Map<string, Reply[]>()
   private holds = new Map<string, Hold[]>()
+  private conversations = new Map<string, Conversation[]>()
+  private open: Open[] = []
+  private heard: { path: string; frame: unknown }[] = []
   readonly received: Received[] = []
   readonly unanswered: string[] = []
   readonly violations: string[] = []
@@ -99,6 +121,59 @@ export class Backend {
 
   requests(method: string, path: string): Received[] {
     return this.received.filter((r) => r.method === method && takes(path, r.path))
+  }
+
+  socket(path: string, conversation: Conversation = {}): void {
+    this.conversations.set(`WS ${path}`, [conversation])
+  }
+
+  frames(path: string): unknown[] {
+    return this.heard.filter((h) => takes(path, h.path)).map((h) => h.frame)
+  }
+
+  // A step pushes once the page has the socket open: it opens on its own time, not the step's.
+  async push(path: string, frame: Frame): Promise<void> {
+    const deadline = Date.now() + 5000
+    let open = this.open.filter((o) => !o.closed && takes(path, o.path))
+    while (open.length === 0) {
+      if (Date.now() > deadline) {
+        throw new Error(`no socket is open on ${path} to push to`)
+      }
+      await new Promise((wait) => setTimeout(wait, 20))
+      open = this.open.filter((o) => !o.closed && takes(path, o.path))
+    }
+    for (const o of open) {
+      o.socket.send(encode(frame))
+    }
+    this.trace.touch()
+  }
+
+  connect(socket: Socket): void {
+    const path = socket.url.pathname
+    const conversation = declared(this.conversations, "WS", path)[0]
+    if (!conversation) {
+      this.unanswered.push(`WS ${path}${socket.url.search}`)
+      socket.close()
+      return
+    }
+    const open: Open = { path, socket, closed: false }
+    this.open.push(open)
+    const say = (frames: Frame[]) => {
+      for (const frame of frames) {
+        socket.send(encode(frame))
+      }
+      this.trace.touch()
+    }
+    socket.onMessage((text) => {
+      const frame = parseBody(text)
+      this.heard.push({ path, frame })
+      this.trace.touch()
+      say(conversation.message?.(frame) ?? [])
+    })
+    socket.onClose(() => {
+      open.closed = true
+    })
+    say(conversation.open?.() ?? [])
   }
 
   async answer(route: Route): Promise<void> {

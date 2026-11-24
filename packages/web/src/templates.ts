@@ -218,10 +218,17 @@ Steps import \`Given\`, \`When\`, \`Then\` from \`tests/steps/bdd.ts\` and recei
   from each request, \`[status, body]\`, naming no query as \`reply\` does;
 - \`edges.<backend>.requests(method, path)\` — what reached the backend, with query
   and body, for a \`Then\`;
+- \`edges.<backend>.socket(path, { open?, message? })\` — the backend's side of a
+  socket the page opens to it: what it says once the socket is open, and what it
+  answers each frame with;
+- \`edges.<backend>.push(path, frame)\` — a frame the backend sends to the page's
+  open sockets on the path;
+- \`edges.<backend>.frames(path)\` — the frames that reached the backend, for a \`Then\`;
 - \`edges.visited\` — the URLs the page sent the user to.
 
-A call to a backend no step answered fails the test, and so does a request to an
-origin \`harness.config.ts\` does not name.
+A call to a backend no step answered fails the test, and so does a socket no
+step declared, and a request or a socket to an origin \`harness.config.ts\` does
+not name.
 
 A backend \`harness.config.ts\` names a contract for is held to it: every answer a
 step declares, and every body the app sends, is checked against the contract, so

@@ -134,6 +134,26 @@ export function harness<const C extends Config>(config: C) {
           }
         })
 
+        await context.routeWebSocket(/.*/, async (ws) => {
+          const url = new URL(ws.url())
+          const origin = new URL(url.href.replace(/^ws/, "http")).origin
+          const stand = stands.get(origin)
+          if (origin === app || assets.get(origin)) {
+            ws.connectToServer()
+          } else if (stand) {
+            stand.connect({
+              url,
+              send: (text) => ws.send(text),
+              close: () => void ws.close(),
+              onMessage: (handler) => ws.onMessage((message) => handler(message.toString())),
+              onClose: (handler) => ws.onClose(() => handler()),
+            })
+          } else {
+            outside.push(`WS ${url.href}`)
+            await ws.close()
+          }
+        })
+
         await use(edges)
 
         if (trace.scenario) {

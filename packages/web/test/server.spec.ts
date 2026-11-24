@@ -128,6 +128,12 @@ withPreload("the time the test fixes is the server's time", async ({ page }) => 
   await expect(page.locator("time")).toHaveText("2026-03-01")
 })
 
+withPreload("a socket the server opens fails the test", async ({ page }) => {
+  withPreload.fail()
+
+  await page.goto("/live")
+})
+
 shop({ preload: false, env: { SSR_PORT: "env" } }, "http://api.shop.test")(
   "a server without the preload is answered through the proxy its environment names",
   async ({ page, edges }) => {

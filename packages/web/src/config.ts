@@ -49,6 +49,7 @@ export type Config = {
   surface: { client: string; tsconfig?: string; sources?: string }
   server?: ServerConfig
   boot?: (backends: Record<string, Backend>) => void
+  settle?: { ignore?: string[] }
 }
 
 const reserved = ["visited", "trace"]

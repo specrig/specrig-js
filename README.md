@@ -226,6 +226,7 @@ export default defineConfig({
 | `surface` | the class through which the app sends its requests; `tsconfig` and `sources` if not `tsconfig.app.json` and `src` |
 | `server` | the app's own server, for an app that renders on one: see below |
 | `boot` | `(backends) => …`: what the backends answer in every test before its first step — to the page, and to the server as it starts |
+| `settle` | `ignore`: the packages whose timers send nothing, which the harness does not wait for between steps: see the records below |
 
 **A third-party script** — a captcha, a payment form, a map — is an origin the
 app loads code from, and the harness knows no vendor's code. The app's platform
@@ -355,6 +356,16 @@ render; then 50 ms with nothing more. Every whole run rewrites it, a failing one
 included; a run narrowed to some cases writes nothing. Only the `description`
 fields are written by hand: they survive a rewrite, and one whose step is gone
 moves to `orphaned`, comes back with its step, and fails the run meanwhile.
+
+A library's own timers — a ripple, a lazy-loaded image, a size poll — send nothing,
+yet the harness waits them out after every step. `settle: { ignore: ["vuetify",
+"vue-lazyload"] }` names the packages it does not wait for: a timer counts as a
+package's when the code that arms it maps, through the source map of the app's own
+script, into `node_modules/<package>`. So the build the harness runs keeps its
+source maps (`vite build --sourcemap`); a script without one, or a place it does
+not map, is waited for as before. A package named here that does put off a request
+loses that request from the records: comparing `tests/flows.yaml` before and after
+naming one shows it.
 
 ## Modes and rules
 

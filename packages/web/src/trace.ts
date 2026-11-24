@@ -1,5 +1,6 @@
 import type { BrowserContext, Frame, Page, Request } from "@playwright/test"
 import type { Traced } from "./flows.js"
+import { Sources } from "./sources.js"
 
 // A timer of up to a second is how a page puts off what it sends: a debounce, a retry.
 const short = 1000
@@ -20,6 +21,8 @@ type Armed = { at: number; due: number }
 export class Trace {
   readonly records: Traced[] = []
   scenario?: { feature: string; scenario: string }
+  private readonly ignore: Set<string>
+  private readonly sources = new Sources()
   private step = ""
   private context?: BrowserContext
   private app?: string
@@ -34,6 +37,10 @@ export class Trace {
   private until = Infinity
   private lastActivity = 0
 
+  constructor({ ignore = [] }: { ignore?: string[] } = {}) {
+    this.ignore = new Set(ignore)
+  }
+
   async watch(context: BrowserContext, app?: string): Promise<void> {
     this.context = context
     this.app = app
@@ -43,14 +50,14 @@ export class Trace {
     const listen = (page: Page) => page.on("framenavigated", (frame) => this.navigated(frame))
     context.pages().forEach(listen)
     context.on("page", listen)
-    await context.exposeBinding(binding, ({ frame }, event: "armed" | "done", id: number, delay: number) =>
-      event === "armed" ? this.armed(frame, id, delay) : this.done(frame, id),
+    await context.exposeBinding(binding, ({ frame }, event: "armed" | "done", id: number, delay: number, place?: string) =>
+      event === "armed" ? this.armed(frame, id, delay, place) : this.done(frame, id),
     )
     // What the page sends once the user acts is not what the answers of the round caused.
     await context.exposeBinding(input, () => {
       this.round++
     })
-    await context.addInitScript(timers, { binding, idle, input, short })
+    await context.addInitScript(timers, { binding, idle, input, short, placed: this.ignore.size > 0 })
   }
 
   started(request: Request): void {
@@ -111,9 +118,21 @@ export class Trace {
     this.timers.delete(frame)
   }
 
-  private armed(frame: Frame, id: number, delay: number): void {
+  private armed(frame: Frame, id: number, delay: number, place?: string): void {
     const armed = this.timers.get(frame) ?? this.timers.set(frame, new Map()).get(frame)!
     armed.set(id, { at: Date.now(), due: Date.now() + delay })
+    // Only the app's own scripts are read for their source map: a third party's is not fetched from the network.
+    if (place && this.app && place.startsWith(`${this.app}/`)) {
+      void this.forgetIfIgnored(frame, id, place)
+    }
+  }
+
+  // Waited for until its package is known, so an ignored timer only shortens the wait once it is.
+  private async forgetIfIgnored(frame: Frame, id: number, place: string): Promise<void> {
+    const owner = await this.sources.packageAt(place)
+    if (owner && this.ignore.has(owner)) {
+      this.timers.get(frame)?.delete(id)
+    }
   }
 
   // A timer is done before the page sends what it fired, so it counts as activity, unless it was past the horizon.
@@ -233,21 +252,23 @@ export class Trace {
 // to itself, queued as a render's next slice is, twice comes back with nothing run
 // before it. requestIdleCallback cannot say so, as Chrome holds it back after input.
 // The user's press, key or typing is told too; the page's own events are not trusted.
-function timers({ binding, idle, input, short }: { binding: string; idle: string; input: string; short: number }): void {
+function timers({ binding, idle, input, short, placed }: { binding: string; idle: string; input: string; short: number; placed: boolean }): void {
   type Arm = (handler: TimerHandler, delay?: number, ...args: unknown[]) => number
   type Clear = (id?: number) => void
   const scope = window as unknown as Record<string, unknown>
   const armed = new Set<number>()
   let telling = false
-  const tell = (event: "armed" | "done", id: number, delay?: number) => {
-    const report = scope[binding] as ((event: string, id: number, delay?: number) => Promise<void>) | undefined
+  const tell = (event: "armed" | "done", id: number, delay?: number, place?: string) => {
+    const report = scope[binding] as ((event: string, id: number, delay?: number, place?: string) => Promise<void>) | undefined
     telling = true
     try {
-      report?.(event, id, delay).catch(() => {})
+      report?.(event, id, delay, place).catch(() => {})
     } finally {
       telling = false
     }
   }
+  // This script runs as an anonymous one, so the first frame with an address is the code that armed the timer.
+  const placeOf = (stack = "") => stack.match(/(https?:\/\/[^\s()]+:\d+:\d+)/)?.[1]
   // The function under `name` is wrapped, and so is whatever is put in its place later.
   const hook = <F extends Arm | Clear>(name: string, wrap: (fn: F) => F): (() => F) => {
     const ours = new WeakSet<F>()
@@ -276,7 +297,7 @@ function timers({ binding, idle, input, short }: { binding: string; idle: string
         }
       }, delay)
       armed.add(id)
-      tell("armed", id, after)
+      tell("armed", id, after, placed ? placeOf(new Error().stack) : undefined)
       return id
     }
     return tracked

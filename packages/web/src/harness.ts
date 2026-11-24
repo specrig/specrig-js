@@ -104,7 +104,7 @@ export function harness<const C extends Config>(config: C) {
       await use("block")
     },
     specrigStands: async ({}, use) => {
-      const trace = new Trace()
+      const trace = new Trace({ ignore: config.settle?.ignore })
       const byName = new Map(
         backends.map((b) => {
           const routes = routesOf.get(b.name)

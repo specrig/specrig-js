@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import path from "node:path"
+import type { Backend } from "./backend.js"
 
 // Read in the runner before it starts its workers, so they share it: the app's server is built once per run.
 process.env.SPECRIG_RUN ??= randomUUID()
@@ -46,6 +47,7 @@ export type Config = {
   assets?: Record<string, { origin: string; live?: boolean }>
   surface: { client: string; tsconfig?: string; sources?: string }
   server?: ServerConfig
+  boot?: (backends: Record<string, Backend>) => void
 }
 
 const reserved = ["visited", "trace"]

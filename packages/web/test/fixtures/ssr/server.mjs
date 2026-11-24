@@ -6,6 +6,8 @@ const api = process.env.API_URL
 const port = process.env.SSR_PORT === "env" ? Number(process.env.PORT) : 0
 let fired = false
 
+const booted = process.env.BOOT === "1" ? await (await fetch(`${api}/settings`)).json() : undefined
+
 function viaHttp(url) {
   return new Promise((done, fail) => {
     const client = url.startsWith("https:") ? https : http
@@ -66,6 +68,7 @@ const pages = {
   },
   "/state": async () => `<p>${fired ? "fired" : "waiting"}</p>`,
   "/today": async () => `<time>${new Date().toISOString().slice(0, 10)}</time>`,
+  "/booted": async () => `<p>${booted?.name}</p>`,
   "/built": async () => `<p>${readFileSync(process.env.BUILD_OUT, "utf8")}</p>`,
 }
 

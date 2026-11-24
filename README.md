@@ -208,6 +208,14 @@ export default defineConfig({
 | `build` | the constants the build is given, beside the variables that point at stand-ins |
 | `surface` | the class through which the app sends its requests; `tsconfig` and `sources` if not `tsconfig.app.json` and `src` |
 | `server` | the app's own server, for an app that renders on one: see below |
+| `boot` | `(backends) => …`: what the backends answer in every test before its first step — to the page, and to the server as it starts |
+
+**A third-party script** — a captcha, a payment form, a map — is an origin the
+app loads code from, and the harness knows no vendor's code. The app's platform
+writes a fake of what the app calls of it, and the origin answers it as a
+backend with no contract: the fake is a reply of `text/javascript`, declared in
+`boot`, so that every case has it. What the fake hands the app, a token say, is
+what a case then finds in what reached the app's own backend.
 
 ## Settings: at runtime or at build
 

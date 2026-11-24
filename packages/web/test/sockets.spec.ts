@@ -16,6 +16,7 @@ const pages: Record<string, string> = {
   </script>`,
   "/elsewhere": `<script>new WebSocket("wss://elsewhere.example/live")</script>`,
   "/sdk": `<script src="https://cdn.shop.test/sdk.js"></script><script>document.title = window.sdk?.ready ? "ready" : "missing"</script>`,
+  "/boot": `<script>fetch("https://api.shop.test/settings").then((r) => r.json()).then((s) => { document.title = s.name })</script>`,
 }
 
 const app = http.createServer((request, response) => {
@@ -30,6 +31,7 @@ const config = {
   surface: { client: "HttpClient" },
 }
 const shop = harness(config).test
+const booted = harness({ ...config, boot: ({ api }) => api.reply("GET", "/settings", 200, { name: "Corner shop" }) }).test
 
 test.use({ baseURL: APP })
 
@@ -86,4 +88,10 @@ shop("a reply that is not JSON is answered as it is, as a script the page runs",
   await page.goto("/sdk")
 
   await expect(page).toHaveTitle("ready")
+})
+
+booted("what the config's boot declares answers the page without a step", async ({ page }) => {
+  await page.goto("/boot")
+
+  await expect(page).toHaveTitle("Corner shop")
 })

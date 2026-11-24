@@ -75,6 +75,7 @@ export function harness<const C extends Config>(config: C) {
     specrigStands: async ({}, use) => {
       const trace = new Trace()
       const stands = new Map(backends.map((b) => [b.origin, new Backend(trace, b.check)]))
+      config.boot?.(Object.fromEntries(backends.map((b) => [b.name, stands.get(b.origin)!])))
       await use({ backends: stands, assets, outside: [], trace })
     },
     specrigServer: [

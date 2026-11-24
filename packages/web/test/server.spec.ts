@@ -3,12 +3,12 @@ import { mkdirSync, readFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { expect } from "@playwright/test"
-import type { ServerConfig } from "../src/config.js"
+import type { Config, ServerConfig } from "../src/config.js"
 import { harness } from "../src/harness.js"
 
 const root = path.join(import.meta.dirname, "fixtures", "ssr")
 
-function shop(server: Partial<ServerConfig> = {}, origin = "https://api.shop.test", constants: Record<string, string> = {}) {
+function shop(server: Partial<ServerConfig> = {}, origin = "https://api.shop.test", constants: Record<string, string> = {}, boot?: Config["boot"]) {
   return harness({
     root,
     service: "shop",
@@ -16,6 +16,7 @@ function shop(server: Partial<ServerConfig> = {}, origin = "https://api.shop.tes
     backends: { api: { origin, serverEnv: "API_URL" } },
     surface: { client: "HttpClient" },
     server: { command: "node server.mjs", ...server },
+    boot,
   }).test
 }
 
@@ -141,6 +142,15 @@ withPreload("a socket the server opens fails the test", async ({ page }) => {
 
   await page.goto("/live")
 })
+
+shop({ env: { BOOT: "1" } }, undefined, {}, (backends) => backends.api.reply("GET", "/settings", 200, { name: "Corner shop" }))(
+  "what the server asks for as it starts is answered from the config's boot",
+  async ({ page }) => {
+    await page.goto("/booted")
+
+    await expect(page.getByRole("paragraph")).toHaveText("Corner shop")
+  },
+)
 
 shop({ preload: false, env: { SSR_PORT: "env" } }, "http://api.shop.test")(
   "a server without the preload is answered through the proxy its environment names",

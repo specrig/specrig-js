@@ -404,18 +404,52 @@ function inputs(command: string, config: Config): string | undefined {
   return key.digest("hex")
 }
 
-async function rebuilt(command: string, config: Config, dir: string): Promise<string | undefined> {
-  const key = inputs(command, config)
-  const last = path.join(dir, "last")
-  if (key && !process.env.SPECRIG_REBUILD && existsSync(last) && readFileSync(last, "utf8") === key) {
+type LastBuild = { key: string | null; run: string; failure?: string }
+
+function lastBuild(file: string): LastBuild | undefined {
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as LastBuild
+  } catch {
     return undefined
   }
-  rmSync(last, { force: true })
-  const failure = await building(command, config)
-  if (!failure && key) {
-    writeFileSync(last, key)
+}
+
+type Decision = "build" | "serve" | { failure: string }
+
+function decided(last: LastBuild | undefined, thisRun: string, key: string | undefined): Decision {
+  if (last?.run === thisRun && last.key === (key ?? null)) {
+    return last.failure ? { failure: last.failure } : "serve"
   }
-  return failure
+  if (key && !process.env.SPECRIG_REBUILD && last?.key === key && !last.failure) {
+    return "serve"
+  }
+  return "build"
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
+function claimed(lock: string): boolean {
+  try {
+    mkdirSync(lock)
+    writeFileSync(path.join(lock, "pid"), String(process.pid))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw error
+    }
+    const pid = Number(existsSync(path.join(lock, "pid")) ? readFileSync(path.join(lock, "pid"), "utf8") : Number.NaN)
+    if (pid && !alive(pid)) {
+      rmSync(lock, { recursive: true, force: true })
+    }
+    return false
+  }
 }
 
 export async function built(config: Config): Promise<void> {
@@ -425,22 +459,32 @@ export async function built(config: Config): Promise<void> {
   }
   const dir = path.join(os.tmpdir(), "specrig", createHash("sha256").update(config.root).digest("hex").slice(0, 16))
   mkdirSync(dir, { recursive: true })
-  const done = path.join(dir, `${run()}.done`)
-  try {
-    mkdirSync(path.join(dir, `${run()}.lock`))
-    const written = `${done}.${process.pid}`
-    writeFileSync(written, (await rebuilt(command, config, dir)) ?? "")
-    renameSync(written, done)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-      throw error
+  const thisRun = run()
+  const key = inputs(command, config)
+  const record = path.join(dir, "last.json")
+  const lock = path.join(dir, "building")
+  for (;;) {
+    let decision = decided(lastBuild(record), thisRun, key)
+    if (decision === "build" && claimed(lock)) {
+      try {
+        decision = decided(lastBuild(record), thisRun, key)
+        if (decision === "build") {
+          const failure = await building(command, config)
+          const written = `${record}.${process.pid}`
+          writeFileSync(written, JSON.stringify({ key: key ?? null, run: thisRun, ...(failure && { failure }) }))
+          renameSync(written, record)
+          decision = failure ? { failure } : "serve"
+        }
+      } finally {
+        rmSync(lock, { recursive: true, force: true })
+      }
     }
-    while (!existsSync(done)) {
-      await new Promise((wait) => setTimeout(wait, 200))
+    if (decision === "serve") {
+      return
     }
-  }
-  const failure = readFileSync(done, "utf8")
-  if (failure) {
-    throw new Error(failure)
+    if (decision !== "build") {
+      throw new Error(decision.failure)
+    }
+    await new Promise((wait) => setTimeout(wait, 200))
   }
 }

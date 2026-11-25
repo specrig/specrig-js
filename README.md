@@ -304,7 +304,9 @@ app's directory, `tests/` aside and what `.gitignore` names aside. A run that
 changed only its steps, cases or records serves the last build. An app outside
 git builds every run. What the key does not see — an installed package that
 changed without its lockfile, a variable of the shell's the build reads, a build
-output deleted by hand — calls for `SPECRIG_REBUILD=1`.
+output deleted by hand — calls for `SPECRIG_REBUILD=1`. The one record of the last
+build is `specrig/<hash of the app's path>/last.json` in the system's temporary
+folder.
 
 **What the server sends.** The harness starts the server with a module of
 `@specrig/web` loaded into it — through `NODE_OPTIONS` for Node, `BUN_OPTIONS`

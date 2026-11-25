@@ -285,7 +285,7 @@ export default defineConfig({
 | key | |
 |---|---|
 | `server.command` | starts the server, from the app's directory, through the shell |
-| `server.build` | builds what it serves, once a run, before the first test that needs it |
+| `server.build` | builds what it serves, before the first test that needs it, when the app changed since the last build |
 | `server.env` | the constants the server reads |
 | `server.port` | where it listens, when nothing else can say |
 | `server.preload` | `false` for a server the preload cannot be loaded into |
@@ -297,6 +297,14 @@ in one test is not what another reads. The page is given the server's address
 as `baseURL`, so `playwright.config.ts` has no `webServer`, and imports
 `harness.config.ts` so that its workers build once between them; `init --server`
 writes it so.
+
+A run builds only when the app changed since the last build: the build command,
+the variables the harness config gives it, and every file git sees under the
+app's directory, `tests/` aside and what `.gitignore` names aside. A run that
+changed only its steps, cases or records serves the last build. An app outside
+git builds every run. What the key does not see — an installed package that
+changed without its lockfile, a variable of the shell's the build reads, a build
+output deleted by hand — calls for `SPECRIG_REBUILD=1`.
 
 **What the server sends.** The harness starts the server with a module of
 `@specrig/web` loaded into it — through `NODE_OPTIONS` for Node, `BUN_OPTIONS`

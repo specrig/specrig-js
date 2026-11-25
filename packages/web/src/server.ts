@@ -1,6 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process"
+import { type ChildProcess, spawn, spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import http from "node:http"
 import net from "node:net"
 import os from "node:os"
@@ -8,6 +8,7 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { Backend } from "./backend.js"
 import { buildEnv, type Config, type ServerConfig, serverEnv } from "./config.js"
+import { layout } from "./layout.js"
 import type { Trace } from "./trace.js"
 
 export type Stands = {
@@ -384,6 +385,39 @@ async function building(command: string, config: Config): Promise<string | undef
   return code === 0 ? undefined : `the build, \`${command}\`, exited with code ${code}\n${output.tail()}`
 }
 
+function inputs(command: string, config: Config): string | undefined {
+  const tests = layout.tests.map((dir) => `:(exclude)${dir}`)
+  const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".", ...tests], { cwd: config.root })
+  if (listed.status !== 0) {
+    return undefined
+  }
+  const key = createHash("sha256").update(command).update("\0").update(JSON.stringify(buildEnv(config)))
+  const files = [...new Set(listed.stdout.toString("utf8").split("\0").filter(Boolean))].sort()
+  for (const file of files) {
+    key.update("\0").update(file).update("\0")
+    try {
+      key.update(readFileSync(path.join(config.root, file)))
+    } catch {
+      key.update("\0gone")
+    }
+  }
+  return key.digest("hex")
+}
+
+async function rebuilt(command: string, config: Config, dir: string): Promise<string | undefined> {
+  const key = inputs(command, config)
+  const last = path.join(dir, "last")
+  if (key && !process.env.SPECRIG_REBUILD && existsSync(last) && readFileSync(last, "utf8") === key) {
+    return undefined
+  }
+  rmSync(last, { force: true })
+  const failure = await building(command, config)
+  if (!failure && key) {
+    writeFileSync(last, key)
+  }
+  return failure
+}
+
 export async function built(config: Config): Promise<void> {
   const command = config.server?.build
   if (!command) {
@@ -395,7 +429,7 @@ export async function built(config: Config): Promise<void> {
   try {
     mkdirSync(path.join(dir, `${run()}.lock`))
     const written = `${done}.${process.pid}`
-    writeFileSync(written, (await building(command, config)) ?? "")
+    writeFileSync(written, (await rebuilt(command, config, dir)) ?? "")
     renameSync(written, done)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
